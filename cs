@@ -1,19 +1,17 @@
 #!/bin/bash
 
-SCRIPT_HEADER=(
-  "# -----------------------------------------------------"
-  "# CloudScript                                          "
-  "# Quickly do cloud stuff without leaving the terminal. "
-  "#                                                      "
-  "# Author : Keegan Mullaney                             "
-  "# Company: New Relic                                   "
-  "# Email  : kmullaney@newrelic.com                      "
-  "# Website: github.com/keegoid-nr/cloudscript           "
-  "# License: MIT                                         "
-  "#                                                      "
-  "# debug  : export CS_DEBUG=1                           "
-  "# -----------------------------------------------------"
-)
+# -----------------------------------------------------
+# CloudScript
+# Quickly do cloud stuff without leaving the terminal.
+#
+# Author : Keegan Mullaney
+# Company: New Relic
+# Email  : kmullaney@newrelic.com
+# Website: github.com/keegoid-nr/cloudscript
+# License: MIT
+#
+# debug  : export CS_DEBUG=1
+# -----------------------------------------------------
 
 # --------------------------  LIBRARIES
 
@@ -40,8 +38,16 @@ SSH_CONFIG="$HOME/.ssh/config"
 
 # --------------------------- HELPER FUNCTIONS
 
+checks() {
+  if ! lib_has aws; then ec2_exit "aws cli v2"; fi
+  if ! lib_has jq; then ec2_exit "jq"; fi
+  if [ $CS_DEBUG -eq 1 ]; then
+    if ! lib_has abc; then ec2_exit "abc cli"; fi
+  fi
+  if ! aws sts get-caller-identity >/dev/null; then exit 1; fi
+}
+
 getPublicDns() {
-  lib_msg "Getting public DNS name for $1"
   aws ec2 describe-instances --instance-ids "$1" | jq -r '.Reservations[].Instances[].PublicDnsName'
 }
 
@@ -49,6 +55,10 @@ updateSSH() {
   local dns
   lib_msg "Checking if instance $1 is running"
   aws ec2 wait instance-running --instance-ids "$1"
+  # if [ "${FUNCNAME[1]}" == "start" ]; then
+  #   lib_msg "waiting for public IPv4 address to update"
+  #   sleep 5s
+  # fi
   lib_msg "Getting public DNS name"
   dns="$(getPublicDns "$1")"
   lib_msg "Enter a \"Host\" to update from $SSH_CONFIG"
@@ -57,8 +67,18 @@ updateSSH() {
   echo
   read -erp "   : " host
   if grep "$host" "$SSH_CONFIG"; then
-    sed -e "/$host/,//  s/Hostname.*/Hostname $dns/" "$SSH_CONFIG"
+    # modify existing host
+    sed -i.bak -e "/$host/,//  s/Hostname.*/Hostname $dns/" "$SSH_CONFIG"
+  else
+    # add new host
+    cat <<-EOF >> "$SSH_CONFIG"
+Host $host
+  Hostname $dns
+  User ec2-user
+EOF
   fi
+  echo
+  cat "$SSH_CONFIG"
 }
 
 ec2_exit() {
@@ -76,6 +96,7 @@ status() {
 start() {
   lib_echo "Start"
   aws ec2 start-instances --instance-ids "$1"
+  updateSSH "$1"
 }
 
 stop() {
@@ -88,43 +109,52 @@ restart() {
   aws ec2 reboot-instances --instance-ids "$1"
 }
 
-ids() {
-  lib_echo "Ids"
-  lib_msg "Getting EC2 names and instanceIds"
-  aws ec2 describe-instances | jq -r '.Reservations[].Instances[] | (.Tags[]? | select(.Key=="Name")), .InstanceId'
-}
-
 dns() {
   lib_echo "DNS"
   updateSSH "$1"
 }
 
-# --------------------------- MAIN
-
-# print header
-ec2_print() {
-  for line in "${SCRIPT_HEADER[@]}"; do
-    echo "$line"
-  done
+ids() {
+  lib_echo "Ids"
+  lib_msg "Getting EC2 names and instanceIds"
+  # aws ec2 describe-instances | jq -r '.Reservations[].Instances[] | .InstanceId as $id | .Tags[]? | select(.Key=="Name") | .Value as $value | [$value, $id] | @csv'
+  aws ec2 describe-instances | jq -r '
+  .Reservations[].Instances[]
+  | .InstanceId as $id
+  | .Tags[]?
+  | select(.Key=="Name")
+  | .Value as $value
+  | [$value, $id]
+  | @csv'
 }
+
+usage() {
+  echo
+  echo "Usage: $1 start|stop|restart|status|dns [instanceId]"
+  echo
+}
+
+# --------------------------- CLI
 
 # display message before exit
 ec2_thanks() {
   if lib_has figlet; then
-    lib_msg "Thanks for using CloudScript!" | figlet -f small
+    lib_msg "Thanks for using CloudScript!" | figlet -f mini
   else
     lib_msg "Thanks for using CloudScript!"
   fi
   lib_msg "Made with <3 by Keegan Mullaney, a Senior Technical Support Engineer at New Relic."
 }
 
-# execute main script function to collect Kubernetes info
+# $1: operation
+# $2: instanceId (optional), if blank will get list of available instanceIds
 ec2_go() {
-  if ! lib_has aws; then ec2_exit "aws cli v2"; fi
-  if ! lib_has jq; then ec2_exit "jq"; fi
+  checks
 
-  if $CS_DEBUG -eq 1; then
-    if ! lib_has abc; then ec2_exit "abc cli"; fi
+  # if no instanceId is provided, get them
+  if [ -n "$1" ] && [ -z "$2" ]; then
+    ids
+    exit 0
   fi
 
   case "$1" in
@@ -140,13 +170,11 @@ ec2_go() {
   'status')
     status "$2"
     ;;
-  'ids')
-    getInstanceIds
+  'dns')
+    dns "$2"
     ;;
   *)
-    echo
-    echo "Usage: $0 { start <instanceId> | stop <instanceId> | restart <instanceId> | status <instanceId> | dns <instanceId> | ids }"
-    echo
+    usage "$0"
     exit 1
     ;;
   esac
@@ -154,12 +182,11 @@ ec2_go() {
 
 # unset functions to free up memmory
 ec2_unset() {
-  unset -f ec2_print ec2_go ec2_thanks
+  unset -f ec2_go ec2_thanks
 }
 
 # --------------------------  MAIN
 
-ec2_print
 ec2_go "$@"
 ec2_thanks
 ec2_unset
