@@ -1,0 +1,43 @@
+# CloudScript
+
+A script for managing instance states of EC2 instances on AWS.
+
+## Requirements
+
+AWS CLI v2 must be installed and configured, like by running `aws configure`.  
+https://docs.aws.amazon.com/cli/latest/userguide/install-cliv2.html
+
+./jq must be installed.  
+https://stedolan.github.io/jq/
+
+## Usage
+
+```sh
+./cs start|stop|restart|status|dns [instanceId]
+```
+
+1. Copy `cs` to your PATH.
+1. Verify it is showing up with:
+
+    ```sh
+    which cs
+    ```
+
+1. Then run with:
+
+    ```sh
+    cs start|stop|restart|status|dns [instanceId]
+    ```
+
+If leaving off the optional instanceId a list of instanceIds will be shown, but only those with a `Name` tag.
+
+```json
+          "Tags": [
+            {
+              "Key": "Name",
+              "Value": "your-ec2-instance-name"
+            }
+          ],
+```
+
+*Note: tested on Ubuntu 21.04 with Bash version 5.1.4*
