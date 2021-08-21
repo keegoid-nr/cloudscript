@@ -38,11 +38,16 @@ SSH_CONFIG="$HOME/.ssh/config"
 
 # --------------------------- HELPER FUNCTIONS
 
+cs_exit() {
+  echo >&2 "Please install $1 before running this script."
+  exit 1
+}
+
 checks() {
-  if ! lib_has aws; then ec2_exit "aws cli v2"; fi
-  if ! lib_has jq; then ec2_exit "jq"; fi
+  if ! lib_has aws; then cs_exit "aws cli v2"; fi
+  if ! lib_has jq; then cs_exit "jq"; fi
   if [ $CS_DEBUG -eq 1 ]; then
-    if ! lib_has abc; then ec2_exit "abc cli"; fi
+    if ! lib_has abc; then cs_exit "abc cli"; fi
   fi
   if ! aws sts get-caller-identity >/dev/null; then exit 1; fi
 }
@@ -74,16 +79,11 @@ updateSSH() {
     cat <<-EOF >> "$SSH_CONFIG"
 Host $host
   Hostname $dns
-  User ec2-user
+  User cs-user
 EOF
   fi
   echo
   cat "$SSH_CONFIG"
-}
-
-ec2_exit() {
-  echo >&2 "Please install $1 before running this script."
-  exit 1
 }
 
 # --------------------------- FUNCTIONS
@@ -137,7 +137,7 @@ usage() {
 # --------------------------- CLI
 
 # display message before exit
-ec2_thanks() {
+cs_thanks() {
   if lib_has figlet; then
     lib_msg "Thanks for using CloudScript!" | figlet -f mini
   else
@@ -148,7 +148,7 @@ ec2_thanks() {
 
 # $1: operation
 # $2: instanceId (optional), if blank will get list of available instanceIds
-ec2_go() {
+cs_go() {
   checks
 
   # if no instanceId is provided, get them
@@ -181,13 +181,13 @@ ec2_go() {
 }
 
 # unset functions to free up memmory
-ec2_unset() {
-  unset -f ec2_go ec2_thanks
+cs_unset() {
+  unset -f cs_go cs_thanks
 }
 
 # --------------------------  MAIN
 
-ec2_go "$@"
-ec2_thanks
-ec2_unset
+cs_go "$@"
+cs_thanks
+cs_unset
 exit 0
