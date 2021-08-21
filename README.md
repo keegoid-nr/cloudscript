@@ -1,6 +1,6 @@
 # CloudScript
 
-A script for managing instance states of EC2 instances on AWS.
+A script for managing states of EC2 instances on AWS.
 
 ## Requirements
 
