@@ -79,7 +79,7 @@ updateSSH() {
     cat <<-EOF >> "$SSH_CONFIG"
 Host $host
   Hostname $dns
-  User cs-user
+  User ec2-user
 EOF
   fi
   echo
