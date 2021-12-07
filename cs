@@ -31,33 +31,6 @@ lib_msg() {
   echo -e "$1"
 }
 
-# run a script from another script
-# $1 -> name of script to be run
-# $2 -> script directory
-lib_run_script() {
-  local script="$1"
-  local result
-
-  # make sure dos2unix is installed
-  if ! lib_has dos2unix; then cs_exit "dos2unix"; fi
-
-  # if script exists
-  if [ -n "$script" ]; then
-    # get script ready to run
-    dos2unix -k -q "${script}"
-    chmod +x "${script}"
-
-    # clear the screen and run the script
-    [ "$CS_DEBUG" -eq 1 ] || clear
-    ./"${script}" "$@"
-    result="$?"
-    [ "$CS_DEBUG" -eq 1 ] && lib_msg "script: ${script} has finished"
-    return "$result"
-  fi
-
-  return 1
-}
-
 # --------------------------  SETUP PARAMETERS
 
 [ -z "$CS_DEBUG" ] && CS_DEBUG=0
@@ -70,13 +43,21 @@ cs_exit() {
   exit 1
 }
 
+# $1: eksctl (optional)
 checks() {
   if ! lib_has aws; then cs_exit "aws cli v2"; fi
   if ! lib_has jq; then cs_exit "jq"; fi
+  if [ -n "$1" ]; then
+    if ! lib_has "$1"; then cs_exit "$1"; fi
+  fi
   if [ $CS_DEBUG -eq 1 ]; then
     if ! lib_has brew; then cs_exit "brew"; fi
   fi
   if ! aws sts get-caller-identity >/dev/null; then exit 1; fi
+}
+
+getNodeGroup() {
+  eksctl get ng --cluster "$1" -o json | jq -r '.[].Name'
 }
 
 getPublicDns() {
@@ -143,6 +124,30 @@ EOF
 
 # --------------------------- FUNCTIONS
 
+eks-status() {
+  lib_echo "Status"
+  aws eks describe-cluster --name "$1" --query 'cluster.status' --output text
+  lib_msg "nodegroup capacity: $(eksctl get ng --cluster "$1" -o json | jq -r '.[].DesiredCapacity')"
+}
+
+eks-start() {
+  lib_echo "Start (scale up)"
+  eksctl scale ng "$(getNodeGroup "$1")" --cluster "$1" -N "$2"
+}
+
+eks-stop() {
+  lib_echo "Stop (scale down)"
+  eksctl scale ng "$(getNodeGroup "$1")" --cluster "$1" -N 0
+}
+
+clusters() {
+  lib_echo "Clusters"
+  lib_msg "Getting EKS cluster names"
+  aws eks list-clusters --output text
+  # eksctl get cluster -o json | jq -r '.[].metadata.name'
+}
+
+
 status() {
   lib_echo "Status"
   aws ec2 describe-instance-status --instance-ids "$1"
@@ -174,7 +179,6 @@ user() {
   getDefaultUser "$1"
 }
 
-
 ids() {
   lib_echo "Ids"
   lib_msg "Getting EC2 names and instanceIds"
@@ -191,7 +195,8 @@ ids() {
 
 usage() {
   echo
-  echo "Usage: $1 (eks) start|stop|restart|status|dns|user [instanceId]"
+  echo "EC2 Usage: $1 start|stop|restart|status|dns|user [instanceId]"
+  echo "EKS Usage: $1 eks start|stop|status [cluster] [nodes]"
   echo
 }
 
@@ -208,59 +213,89 @@ cs_thanks() {
   lib_msg "Made with <3 by Keegan Mullaney, a Senior Technical Support Engineer at New Relic."
 }
 
+# $1: eks
+# $2: operation
+# $3: cluster name (optional), if blank will get list of available clusters
+# $4: node count for scaling up
+cs_eks_go() {
+  checks "eksctl"
+
+  # if no cluster name is provided, get them
+  if [ -n "$2" ] && [ -z "$3" ]; then
+    clusters
+    exit 1
+  fi
+
+  case "$2" in
+  'start')
+    eks-start "$3" "$4"
+    ;;
+  'stop')
+    eks-stop "$3"
+    ;;
+  'status')
+    eks-status "$3"
+    ;;
+  *)
+    usage "$0"
+    exit 1
+    ;;
+  esac
+}
+
 # $1: operation
 # $2: instanceId (optional), if blank will get list of available instanceIds
 cs_go() {
   checks
 
-  # eks
-  if [ "eks" = "$1" ]; then
-    lib_run_script cs-eks "$@"
-    [ "$?" -eq 1 ] && exit 1
-
-  # ec2
-  else
-    # if no instanceId is provided, get them
-    if [ -n "$1" ] && [ -z "$2" ]; then
-      ids
-      exit 1
-    fi
-
-    case "$1" in
-    'start')
-      start "$2"
-      ;;
-    'stop')
-      stop "$2"
-      ;;
-    'restart')
-      restart "$2"
-      ;;
-    'status')
-      status "$2"
-      ;;
-    'dns')
-      dns "$2"
-      ;;
-    'user')
-      user "$2"
-      ;;
-    *)
-      usage "$0"
-      exit 1
-      ;;
-    esac
+  # if no instanceId is provided, get them
+  if [ -n "$1" ] && [ -z "$2" ]; then
+    ids
+    exit 1
   fi
+
+  case "$1" in
+  'start')
+    start "$2"
+    ;;
+  'stop')
+    stop "$2"
+    ;;
+  'restart')
+    restart "$2"
+    ;;
+  'status')
+    status "$2"
+    ;;
+  'dns')
+    dns "$2"
+    ;;
+  'user')
+    user "$2"
+    ;;
+  *)
+    usage "$0"
+    exit 1
+    ;;
+  esac
 }
 
 # unset functions to free up memmory
 cs_unset() {
-  unset -f cs_go cs_thanks
+  unset -f cs_go cs_eks_go cs_thanks
 }
 
 # --------------------------  MAIN
 
-cs_go "$@"
+[ $CS_DEBUG -eq 1 ] && echo "arguments:" "$@"
+
+if [ "eks" = "$1" ]; then
+  # eks
+  cs_eks_go "$@"
+else
+  # ec2
+  cs_go "$@"
+fi
 cs_thanks
 cs_unset
 exit 0
