@@ -47,17 +47,45 @@ checks() {
   if ! lib_has aws; then cs_exit "aws cli v2"; fi
   if ! lib_has jq; then cs_exit "jq"; fi
   if [ $CS_DEBUG -eq 1 ]; then
-    if ! lib_has abc; then cs_exit "abc cli"; fi
+    if ! lib_has brew; then cs_exit "brew"; fi
   fi
   if ! aws sts get-caller-identity >/dev/null; then exit 1; fi
 }
 
 getPublicDns() {
-  aws ec2 describe-instances --instance-ids "$1" | jq -r '.Reservations[].Instances[].PublicDnsName'
+  aws ec2 describe-instances --instance-ids "$1" --query 'Reservations[*].Instances[*].PublicDnsName' --output text
+}
+
+getDefaultUser() {
+  local imageId
+  local imageDetails
+  local platform
+
+  # get platform info from aws
+  imageId=$(aws ec2 describe-instances --instance-ids "$1" --query 'Reservations[*].Instances[*].ImageId' --output text)
+  imageDetails=$(aws ec2 describe-images --image-ids "$imageId" --query 'Images[*].[Name,Description]' --output text)
+  platform="$(aws ec2 describe-instances --instance-ids "$1" --query 'Reservations[*].Instances[*].PlatformDetails' --output text) $imageDetails"
+
+  # check value
+  [ $CS_DEBUG -eq 1 ] && echo "$platform"
+
+  # logic to determine username from platform string
+  if grep -iq "ubuntu" <<< "$platform"; then
+    echo "ubuntu"
+  elif grep -iq "debian" <<< "$platform"; then
+    echo "admin"
+  elif grep -iq "bitnami" <<< "$platform"; then
+    echo "bitnami"
+  elif grep -iq "windows" <<< "$platform"; then
+    echo "Administrator"
+  else
+    echo "ec2-user"
+  fi
 }
 
 updateSSH() {
   local dns
+  local username
   lib_msg "Checking if instance $1 is running"
   aws ec2 wait instance-running --instance-ids "$1"
   # if [ "${FUNCNAME[1]}" == "start" ]; then
@@ -65,7 +93,9 @@ updateSSH() {
   #   sleep 5s
   # fi
   lib_msg "Getting public DNS name"
-  dns="$(getPublicDns "$1")"
+  dns=$(getPublicDns "$1")
+  lib_msg "Getting default user name"
+  username=$(getDefaultUser "$1")
   lib_msg "Enter a \"Host\" to update from $SSH_CONFIG"
   echo
   cat ~/.ssh/config
@@ -79,11 +109,9 @@ updateSSH() {
     cat <<-EOF >> "$SSH_CONFIG"
 Host $host
   Hostname $dns
-  User ec2-user
+  User $username
 EOF
   fi
-  echo
-  cat "$SSH_CONFIG"
 }
 
 # --------------------------- FUNCTIONS
@@ -114,6 +142,12 @@ dns() {
   updateSSH "$1"
 }
 
+user() {
+  lib_echo "User"
+  getDefaultUser "$1"
+}
+
+
 ids() {
   lib_echo "Ids"
   lib_msg "Getting EC2 names and instanceIds"
@@ -130,7 +164,7 @@ ids() {
 
 usage() {
   echo
-  echo "Usage: $1 start|stop|restart|status|dns [instanceId]"
+  echo "Usage: $1 start|stop|restart|status|dns|user [instanceId]"
   echo
 }
 
@@ -172,6 +206,9 @@ cs_go() {
     ;;
   'dns')
     dns "$2"
+    ;;
+  'user')
+    user "$2"
     ;;
   *)
     usage "$0"
