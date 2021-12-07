@@ -31,6 +31,33 @@ lib_msg() {
   echo -e "$1"
 }
 
+# run a script from another script
+# $1 -> name of script to be run
+# $2 -> script directory
+lib_run_script() {
+  local script="$1"
+  local result
+
+  # make sure dos2unix is installed
+  if ! lib_has dos2unix; then cs_exit "dos2unix"; fi
+
+  # if script exists
+  if [ -n "$script" ]; then
+    # get script ready to run
+    dos2unix -k -q "${script}"
+    chmod +x "${script}"
+
+    # clear the screen and run the script
+    [ "$CS_DEBUG" -eq 1 ] || clear
+    ./"${script}" "$@"
+    result="$?"
+    [ "$CS_DEBUG" -eq 1 ] && lib_msg "script: ${script} has finished"
+    return "$result"
+  fi
+
+  return 1
+}
+
 # --------------------------  SETUP PARAMETERS
 
 [ -z "$CS_DEBUG" ] && CS_DEBUG=0
@@ -164,7 +191,7 @@ ids() {
 
 usage() {
   echo
-  echo "Usage: $1 start|stop|restart|status|dns|user [instanceId]"
+  echo "Usage: $1 (eks) start|stop|restart|status|dns|user [instanceId]"
   echo
 }
 
@@ -172,8 +199,9 @@ usage() {
 
 # display message before exit
 cs_thanks() {
+  echo
   if lib_has figlet; then
-    lib_msg "Thanks for using CloudScript!" | figlet -f mini
+    lib_msg "Thanks for using CloudScript!" | figlet -f digital
   else
     lib_msg "Thanks for using CloudScript!"
   fi
@@ -185,36 +213,44 @@ cs_thanks() {
 cs_go() {
   checks
 
-  # if no instanceId is provided, get them
-  if [ -n "$1" ] && [ -z "$2" ]; then
-    ids
-    exit 0
-  fi
+  # eks
+  if [ "eks" = "$1" ]; then
+    lib_run_script cs-eks "$@"
+    [ "$?" -eq 1 ] && exit 1
 
-  case "$1" in
-  'start')
-    start "$2"
-    ;;
-  'stop')
-    stop "$2"
-    ;;
-  'restart')
-    restart "$2"
-    ;;
-  'status')
-    status "$2"
-    ;;
-  'dns')
-    dns "$2"
-    ;;
-  'user')
-    user "$2"
-    ;;
-  *)
-    usage "$0"
-    exit 1
-    ;;
-  esac
+  # ec2
+  else
+    # if no instanceId is provided, get them
+    if [ -n "$1" ] && [ -z "$2" ]; then
+      ids
+      exit 1
+    fi
+
+    case "$1" in
+    'start')
+      start "$2"
+      ;;
+    'stop')
+      stop "$2"
+      ;;
+    'restart')
+      restart "$2"
+      ;;
+    'status')
+      status "$2"
+      ;;
+    'dns')
+      dns "$2"
+      ;;
+    'user')
+      user "$2"
+      ;;
+    *)
+      usage "$0"
+      exit 1
+      ;;
+    esac
+  fi
 }
 
 # unset functions to free up memmory

@@ -1,0 +1,128 @@
+#!/bin/bash
+
+# -----------------------------------------------------
+# CloudScript
+# Quickly do cloud stuff without leaving the terminal.
+#
+# Author : Keegan Mullaney
+# Company: New Relic
+# Email  : kmullaney@newrelic.com
+# Website: github.com/keegoid-nr/cloudscript
+# License: MIT
+#
+# debug  : export CS_DEBUG=1
+# -----------------------------------------------------
+
+# --------------------------  LIBRARIES
+
+lib_has() {
+  type "$1" >/dev/null 2>&1
+}
+
+lib_echo() {
+  echo
+  echo "~~~ ${1} ~~~"
+  echo
+}
+
+# output message with encoded characters
+# $1 -> string
+lib_msg() {
+  echo -e "$1"
+}
+
+# --------------------------  SETUP PARAMETERS
+
+[ -z "$CS_DEBUG" ] && CS_DEBUG=0
+
+# --------------------------- HELPER FUNCTIONS
+
+cs_exit() {
+  echo >&2 "Please install $1 before running this script."
+  exit 1
+}
+
+checks() {
+  if ! lib_has aws; then cs_exit "aws cli v2"; fi
+  if ! lib_has eksctl; then cs_exit "eksctl"; fi
+  if [ $CS_DEBUG -eq 1 ]; then
+    if ! lib_has brew; then cs_exit "brew"; fi
+  fi
+  if ! aws sts get-caller-identity >/dev/null; then exit 1; fi
+}
+
+getNodeGroup() {
+  eksctl get ng --cluster "$1" -o json | jq -r '.[].Name'
+}
+
+# --------------------------- FUNCTIONS
+
+status() {
+  lib_echo "Status"
+  aws eks describe-cluster --name "$1" --query 'cluster.status' --output text
+}
+
+start() {
+  lib_echo "Start (scale up)"
+  eksctl scale ng "$(getNodeGroup "$1")" --cluster "$1" -N "$2"
+}
+
+stop() {
+  lib_echo "Stop (scale down)"
+  eksctl scale ng "$(getNodeGroup "$1")" --cluster "$1" -N 0
+}
+
+
+clusters() {
+  lib_echo "Clusters"
+  lib_msg "Getting EKS cluster names"
+  aws eks list-clusters --output text
+  # eksctl get cluster -o json | jq -r '.[].metadata.name'
+}
+
+usage() {
+  echo
+  echo "Usage: $1 start|stop|status [cluster] [nodes]"
+  echo
+}
+
+# --------------------------- CLI
+
+# $1: operation
+# $2: instanceId (optional), if blank will get list of available instanceIds
+cs_eks_go() {
+  checks
+
+  # if no cluster name is provided, get them
+  if [ -n "$3" ] && [ -z "$4" ]; then
+    clusters
+    exit 1
+  fi
+
+  case "$3" in
+  'start')
+    start "$4" "$5"
+    ;;
+  'stop')
+    stop "$4"
+    ;;
+  'status')
+    status "$4"
+    ;;
+  *)
+    usage "cs eks"
+    exit 1
+    ;;
+  esac
+}
+
+# unset functions to free up memmory
+cs_eks_unset() {
+  unset -f cs_eks_go
+}
+
+# --------------------------  MAIN
+
+[ $CS_DEBUG -eq 1 ] && echo "arguments:" "$@"
+cs_eks_go "$@"
+cs_eks_unset
