@@ -105,11 +105,11 @@ updateSSH() {
   lib_msg "Getting default user name"
   username=$(getDefaultUser "$1")
   lib_msg "Enter a \"Host\" to update from $SSH_CONFIG"
-  echo
+  lib_msg "\nCurrent ~/.ssh/config:"
   cat ~/.ssh/config
   echo
   read -erp "   : " host
-  if grep "$host" "$SSH_CONFIG"; then
+  if grep -q "$host" "$SSH_CONFIG"; then
     # modify existing host
     sed -i.bak -e "/$host/,//  s/Hostname.*/Hostname $dns/" "$SSH_CONFIG"
   else
@@ -120,6 +120,8 @@ Host $host
   User $username
 EOF
   fi
+  lib_msg "\nModified ~/.ssh/config:"
+  cat ~/.ssh/config
 }
 
 # --------------------------- FUNCTIONS
