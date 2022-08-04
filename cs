@@ -92,7 +92,7 @@ getDefaultUser() {
 }
 
 updateSSH() {
-  local dns
+  local hostname
   local username
   lib_msg "Checking if instance $1 is running"
   aws ec2 wait instance-running --instance-ids "$1"
@@ -101,7 +101,7 @@ updateSSH() {
   #   sleep 5s
   # fi
   lib_msg "Getting public DNS name"
-  dns=$(getPublicDns "$1")
+  hostname=$(getPublicDns "$1")
   lib_msg "Getting default user name"
   username=$(getDefaultUser "$1")
   lib_msg "Enter a \"Host\" to update from $SSH_CONFIG"
@@ -110,13 +110,19 @@ updateSSH() {
   echo
   read -erp "   : " host
   if grep -q "$host" "$SSH_CONFIG"; then
-    # modify existing host and username
-    sed -i.bak -e "/$host/,//  s/Hostname.*/Hostname $dns/" -e "/$username/,//  s/User.*/User $username/" "$SSH_CONFIG"
+    # for an existing host, modify Hostname and User
+    sed -i.bak -e "
+      /$host/,/User/ {
+        /$host/n # skip over the line that has $host on it
+        s/Hostname.*/Hostname $hostname/
+        s/User.*/User $username/
+      }
+    " "$SSH_CONFIG"
   else
     # add new host
     cat <<-EOF >> "$SSH_CONFIG"
 Host $host
-  Hostname $dns
+  Hostname $hostname
   User $username
 EOF
   fi
