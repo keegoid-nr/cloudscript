@@ -110,8 +110,8 @@ updateSSH() {
   echo
   read -erp "   : " host
   if grep -q "$host" "$SSH_CONFIG"; then
-    # modify existing host
-    sed -i.bak -e "/$host/,//  s/Hostname.*/Hostname $dns/" "$SSH_CONFIG"
+    # modify existing host and username
+    sed -i.bak -e "/$host/,//  s/Hostname.*/Hostname $dns/" -e "/$username/,//  s/User.*/User $username/" "$SSH_CONFIG"
   else
     # add new host
     cat <<-EOF >> "$SSH_CONFIG"
