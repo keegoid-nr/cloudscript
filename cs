@@ -176,9 +176,9 @@ usage() {
 cs_thanks() {
   echo
   if lib_has figlet; then
-    lib_msg "Thanks for using CloudScript!" | figlet -f digital
+    figlet -f small "CloudScript"
   else
-    lib_msg "Thanks for using CloudScript!"
+    lib_msg "CloudScript"
   fi
   lib_msg "Made with <3 by Keegan Mullaney, a Senior Technical Support Engineer at New Relic."
 }
