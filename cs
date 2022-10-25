@@ -64,64 +64,31 @@ getPublicDns() {
   aws ec2 describe-instances --instance-ids "$1" --query 'Reservations[*].Instances[*].PublicDnsName' --output text
 }
 
-getDefaultUser() {
-  local imageId
-  local imageDetails
-  local platform
-
-  # get platform info from aws
-  imageId=$(aws ec2 describe-instances --instance-ids "$1" --query 'Reservations[*].Instances[*].ImageId' --output text)
-  imageDetails=$(aws ec2 describe-images --image-ids "$imageId" --query 'Images[*].[Name,Description]' --output text)
-  platform="$(aws ec2 describe-instances --instance-ids "$1" --query 'Reservations[*].Instances[*].PlatformDetails' --output text) $imageDetails"
-
-  # check value
-  [ $CS_DEBUG -eq 1 ] && echo "$platform"
-
-  # logic to determine username from platform string
-  if grep -iq "ubuntu" <<< "$platform"; then
-    echo "ubuntu"
-  elif grep -iq "debian" <<< "$platform"; then
-    echo "admin"
-  elif grep -iq "bitnami" <<< "$platform"; then
-    echo "bitnami"
-  elif grep -iq "windows" <<< "$platform"; then
-    echo "Administrator"
-  else
-    echo "ec2-user"
-  fi
-}
-
 updateSSH() {
   local hostname
-  local username
+  local currentUser
   lib_msg "Checking if instance $1 is running"
   aws ec2 wait instance-running --instance-ids "$1"
-  # if [ "${FUNCNAME[1]}" == "start" ]; then
-  #   lib_msg "waiting for public IPv4 address to update"
-  #   sleep 5s
-  # fi
   lib_msg "Getting public DNS name"
   hostname=$(getPublicDns "$1")
-  lib_msg "Getting default user name"
-  username=$(getDefaultUser "$1")
-  lib_msg "Enter a \"Host\" to update from $SSH_CONFIG"
   lib_msg "\nCurrent ~/.ssh/config:"
   cat ~/.ssh/config
   echo
-  read -erp "   : " host
-  if grep -q "$host" "$SSH_CONFIG"; then
+  lib_msg "Enter a \"Host\" to update from $SSH_CONFIG"
+  echo
+  read -erp "   : " match
+  currentUser=$(sed -rne "/$match/,/User/ {s/.*User (.*)/\1/p}" "$SSH_CONFIG")
+  lib_msg "Enter a \"User\" to update from $SSH_CONFIG"
+  read -erp "   : " -i "$currentUser" username
+  echo
+  if grep -q "$match" "$SSH_CONFIG"; then
     # for an existing host, modify Hostname and User
-    sed -i.bak -e "
-      /$host/,/User/ {
-        /$host/n # skip over the line that has $host on it
-        s/Hostname.*/Hostname $hostname/
-        s/User.*/User $username/
-      }
-    " "$SSH_CONFIG"
+    sed -i.bak -e "/$match/,/User/ s/Hostname.*/Hostname $hostname/" \
+               -e "/$match/,/User/ s/User.*/User $username/" "$SSH_CONFIG"
   else
     # add new host
     cat <<-EOF >> "$SSH_CONFIG"
-Host $host
+Host $match
   Hostname $hostname
   User $username
 EOF
@@ -178,13 +145,7 @@ restart() {
 }
 
 dns() {
-  lib_echo "DNS"
-  updateSSH "$1"
-}
-
-user() {
-  lib_echo "User"
-  getDefaultUser "$1"
+  start "$1"
 }
 
 ids() {
@@ -203,7 +164,8 @@ ids() {
 
 usage() {
   echo
-  echo "EC2 Usage: $1 start|stop|restart|status|dns|user [instanceId]"
+  # echo "EC2 Usage: $1 start|stop|restart|status|dns|user [instanceId]"
+  echo "EC2 Usage: $1 start|stop|restart|status|dns [instanceId]"
   echo "EKS Usage: $1 eks start|stop|status [cluster] [nodes]"
   echo
 }
@@ -277,9 +239,6 @@ cs_go() {
     ;;
   'dns')
     dns "$2"
-    ;;
-  'user')
-    user "$2"
     ;;
   *)
     usage "$0"
