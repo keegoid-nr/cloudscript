@@ -146,13 +146,13 @@ list-layers() {
 
 download-layers() {
   local layer
-  local build
   local region
+  local build
   local arn
 
   layer="$1"
-  build="$2"
-  region="$3"
+  region="$2"
+  build="$3"
 
   checks "aws"
   checks "curl"
@@ -251,7 +251,7 @@ usage() {
   echo "--------------------------------"
   echo "EC2    Usage: $1        start|stop|restart|status|ssh [instanceId]"
   echo "EKS    Usage: $1 eks    start [cluster] [nodes] | stop|status [cluster]"
-  echo "Lambda Usage: $1 lambda list-layers (compatibleRuntime|all) (region) | download-layers (layer|all) (build) (region)"
+  echo "Lambda Usage: $1 lambda list-layers (compatibleRuntime|all) (region) | download-layers (layer|all) (region) (build)"
   echo
 }
 
@@ -271,12 +271,9 @@ cs_thanks() {
 # $1: lambda
 # $2: operation
 # list-layers
-# $3: compatibleRuntime|all (optional), if blank will get a list of compatible runtimes
+# $3: compatibleRuntime|layer|all (optional), if blank will get a list of compatible runtimes or layer names
 # $4: region (optional), if blank will use default region
-# download-layers
-# $3: layer|all (optional), if blank will get a list of layer names
-# $4: build (optional), if blank will get latest layers
-# $5: region (optional), if blank will use default region
+# $5: build (optional), if blank will get latest layers
 cs_lambda_go() {
   case "$2" in
   'list-layers')
