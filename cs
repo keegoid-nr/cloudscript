@@ -43,7 +43,7 @@ cs_exit() {
   exit 1
 }
 
-# $1: eksctl (optional)
+# $1: additional requirement
 checks() {
   if ! lib_has aws; then cs_exit "aws cli v2"; fi
   if ! lib_has jq; then cs_exit "jq"; fi
@@ -97,7 +97,91 @@ EOF
   cat ~/.ssh/config
 }
 
+listCompatibleRuntimes() {
+  lib_echo "Compatible Runtimes"
+  curl -fsSL "https://$1.layers.newrelic-external.com/get-layers" | jq -r '.Layers[].LatestMatchingVersion.CompatibleRuntimes[]' | sort | uniq
+}
+
+listLayerNames() {
+  lib_echo "Layer Names"
+  curl -fsSL "https://$1.layers.newrelic-external.com/get-layers" | jq -r '.Layers[].LayerName' | sort | uniq
+}
+
+getLatestBuild() {
+  curl -fsSL "https://$1.layers.newrelic-external.com/get-layers" | jq -r --arg LAYER "$2" '
+  .Layers[]
+  | .LayerName as $name
+  | .LatestMatchingVersion.Version as $build
+  | select($name==$LAYER)
+  | [$build]
+  | @csv'
+}
+
+getLayerArn() {
+  curl -fsSL "https://$1.layers.newrelic-external.com/get-layers?CompatibleRuntime=$compatibleRuntime" | jq .
+}
+
 # --------------------------- FUNCTIONS
+
+list-layers() {
+  local compatibleRuntime
+  local region
+
+  compatibleRuntime="$1"
+  region="$2"
+
+  checks "aws"
+  checks "curl"
+
+  [ -z "$region" ] && region="$(aws configure get region)"
+  [ -z "$region" ] && region="us-west-2"
+  [ -z "$compatibleRuntime" ] && listCompatibleRuntimes "$region" && exit 0
+
+  if [ "$compatibleRuntime" == "all" ]; then
+    curl -fsSL "https://$region.layers.newrelic-external.com/get-layers" | jq .
+  else
+    curl -fsSL "https://$region.layers.newrelic-external.com/get-layers?CompatibleRuntime=$compatibleRuntime" | jq .
+  fi
+}
+
+download-layers() {
+  local layer
+  local build
+  local region
+  local arn
+
+  layer="$1"
+  build="$2"
+  region="$3"
+
+  checks "aws"
+  checks "curl"
+
+  [ -z "$region" ] && region="$(aws configure get region)"
+  [ -z "$region" ] && region="us-west-2"
+  [ -z "$layer" ] && listLayerNames "$region" && exit 0
+  [ -z "$build" ] && build=$(getLatestBuild "$region" "$layer")
+
+  checks "unzip"
+  checks "xargs"
+
+  if [ "$layer" == "all" ]; then
+    # while loop
+      # lib_echo "Layer ARN"
+      # arn="arn:aws:lambda:$region:451483290750:layer:$layer"
+      # lib_msg "$arn:$build"
+      lib_msg "todo: download all layers"
+      lib_echo "Download Layers"
+      # aws --region "$region" lambda get-layer-version --layer-name "$arn" --version-number "$build" | jq -r .Content.Location | xargs curl -so "$layer:$build.zip" && unzip -qo "$layer:$build.zip" -d "$layer:$build" && ls -l "$layer:$build"
+    # end
+  else
+    lib_echo "Layer ARN"
+    arn="arn:aws:lambda:$region:451483290750:layer:$layer"
+    lib_msg "$arn:$build"
+    lib_echo "Download Layers"
+    aws --region "$region" lambda get-layer-version --layer-name "$arn" --version-number "$build" | jq -r .Content.Location | xargs curl -so "$layer:$build.zip" && unzip -qo "$layer:$build.zip" -d "$layer:$build" && ls -l "$layer:$build"
+  fi
+}
 
 eks-status() {
   lib_echo "Status"
@@ -122,7 +206,6 @@ clusters() {
   # eksctl get cluster -o json | jq -r '.[].metadata.name'
 }
 
-
 status() {
   lib_echo "Status"
   aws ec2 describe-instance-status --instance-ids "$1"
@@ -144,7 +227,7 @@ restart() {
   aws ec2 reboot-instances --instance-ids "$1"
 }
 
-dns() {
+ssh() {
   start "$1"
 }
 
@@ -164,9 +247,11 @@ ids() {
 
 usage() {
   echo
-  # echo "EC2 Usage: $1 start|stop|restart|status|dns|user [instanceId]"
-  echo "EC2 Usage: $1 start|stop|restart|status|dns [instanceId]"
-  echo "EKS Usage: $1 eks start|stop|status [cluster] [nodes]"
+  echo "cs command [required] (optional)"
+  echo "--------------------------------"
+  echo "EC2    Usage: $1        start|stop|restart|status|ssh [instanceId]"
+  echo "EKS    Usage: $1 eks    start [cluster] [nodes] | stop|status [cluster]"
+  echo "Lambda Usage: $1 lambda list-layers (compatibleRuntime|all) (region) | download-layers (layer|all) (build) (region)"
   echo
 }
 
@@ -181,6 +266,30 @@ cs_thanks() {
     lib_msg "CloudScript"
   fi
   lib_msg "Made with <3 by Keegan Mullaney, a Senior Technical Support Engineer at New Relic."
+}
+
+# $1: lambda
+# $2: operation
+# list-layers
+# $3: compatibleRuntime|all (optional), if blank will get a list of compatible runtimes
+# $4: region (optional), if blank will use default region
+# download-layers
+# $3: layer|all (optional), if blank will get a list of layer names
+# $4: build (optional), if blank will get latest layers
+# $5: region (optional), if blank will use default region
+cs_lambda_go() {
+  case "$2" in
+  'list-layers')
+    list-layers "$3" "$4"
+    ;;
+  'download-layers')
+    download-layers "$3" "$4" "$5"
+    ;;
+  *)
+    usage "$0"
+    exit 1
+    ;;
+  esac
 }
 
 # $1: eks
@@ -237,8 +346,8 @@ cs_go() {
   'status')
     status "$2"
     ;;
-  'dns')
-    dns "$2"
+  'ssh')
+    ssh "$2"
     ;;
   *)
     usage "$0"
@@ -249,14 +358,17 @@ cs_go() {
 
 # unset functions to free up memmory
 cs_unset() {
-  unset -f cs_go cs_eks_go cs_thanks
+  unset -f cs_go cs_eks_go cs_lambda_go cs_thanks
 }
 
 # --------------------------  MAIN
 
 [ $CS_DEBUG -eq 1 ] && echo "arguments:" "$@"
 
-if [ "eks" = "$1" ]; then
+if [ "lambda" = "$1" ]; then
+  # lambda
+  cs_lambda_go "$@"
+elif [ "eks" = "$1" ]; then
   # eks
   cs_eks_go "$@"
 else
