@@ -27,7 +27,7 @@ unzip, xargs, and curl must also be available.
 ./cs eks start|stop|status [cluster] [nodes]
 
 # Lambda
-./cs lambda list-layers (compatibleRuntime|all) (region) | download-layers (layer|all) (build) (region)"
+./cs lambda list-layers (compatibleRuntime|all) (region) | download-layers (layer|all) (region) (build)"
 ```
 
 1. Copy `cs` to your PATH.
@@ -42,7 +42,7 @@ unzip, xargs, and curl must also be available.
     ```sh
     cs start|stop|restart|status|dns|user [instanceId]
     cs eks start|stop|status [cluster] [nodes]
-    cs lambda list-layers (compatibleRuntime|all) (region) | download-layers (layer|all) (build) (region)
+    cs lambda list-layers (compatibleRuntime|all) (region) | download-layers (layer|all) (region) (build)
     ```
 
 For EKS:
@@ -61,7 +61,7 @@ For EKS:
 For Lambda:
 
 - If leaving off the optional compatibleRuntime, a list of compatible runtimes is obtained.
-- If leaving off the optional build, the latest build is downloaded.
 - If leaving off the optional region, the default region defined in your aws-cli is used.
+- If leaving off the optional build, the latest build is downloaded.
 
 *Tested on Ubuntu 22.04 with Bash version 5.1.16*
