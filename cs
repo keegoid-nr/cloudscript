@@ -31,6 +31,21 @@ lib_msg() {
   echo -e "$1"
 }
 
+# display error message
+# $1 -> string
+# $2 -> string
+lib_error_check() {
+  if [ "$RET" -gt 0 ]; then
+    lib_msg "${FUNCNAME[1]}(${BASH_LINENO[0]}) - An error has occurred. ${1}${2}"
+    exit 1
+  fi
+}
+
+# display debug info
+lib_debug() {
+  [ "$CS_DEBUG" -eq 1 ] && lib_msg "${FUNCNAME[1]}(${BASH_LINENO[0]}) - ARGS: $*"
+}
+
 # --------------------------  SETUP PARAMETERS
 
 [ -z "$CS_DEBUG" ] && CS_DEBUG=0
@@ -50,18 +65,21 @@ checks() {
   if [ -n "$1" ]; then
     if ! lib_has "$1"; then cs_exit "$1"; fi
   fi
-  if [ $CS_DEBUG -eq 1 ]; then
+  if [ "$CS_DEBUG" -eq 1 ]; then
     if ! lib_has brew; then cs_exit "brew"; fi
   fi
   if ! aws sts get-caller-identity >/dev/null; then exit 1; fi
+  RET="$?"
 }
 
 getNodeGroup() {
   eksctl get ng --cluster "$1" -o json | jq -r '.[].Name'
+  RET="$?"
 }
 
 getPublicDns() {
   aws ec2 describe-instances --instance-ids "$1" --query 'Reservations[*].Instances[*].PublicDnsName' --output text
+  RET="$?"
 }
 
 updateSSH() {
@@ -84,10 +102,10 @@ updateSSH() {
   if grep -q "$match" "$SSH_CONFIG"; then
     # for an existing host, modify Hostname and User
     sed -i.bak -e "/$match/,/User/ s/Hostname.*/Hostname $hostname/" \
-               -e "/$match/,/User/ s/User.*/User $username/" "$SSH_CONFIG"
+      -e "/$match/,/User/ s/User.*/User $username/" "$SSH_CONFIG"
   else
     # add new host
-    cat <<-EOF >> "$SSH_CONFIG"
+    cat <<-EOF >>"$SSH_CONFIG"
 Host $match
   Hostname $hostname
   User $username
@@ -95,16 +113,18 @@ EOF
   fi
   lib_msg "\nModified ~/.ssh/config:"
   cat ~/.ssh/config
+  RET="$?"
 }
 
 listCompatibleRuntimes() {
   lib_echo "Compatible Runtimes"
   curl -fsSL "https://$1.layers.newrelic-external.com/get-layers" | jq -r '.Layers[].LatestMatchingVersion.CompatibleRuntimes[]' | sort | uniq
+  RET="$?"
 }
 
 listLayerNames() {
-  lib_echo "Layer Names"
   curl -fsSL "https://$1.layers.newrelic-external.com/get-layers" | jq -r '.Layers[].LayerName' | sort | uniq
+  RET="$?"
 }
 
 getLatestBuild() {
@@ -115,23 +135,29 @@ getLatestBuild() {
   | select($name==$LAYER)
   | [$build]
   | @csv'
+  RET="$?"
 }
 
-getLayerArn() {
-  curl -fsSL "https://$1.layers.newrelic-external.com/get-layers?CompatibleRuntime=$compatibleRuntime" | jq .
+getLayer() {
+  local arn
+  arn="arn:aws:lambda:$2:451483290750:layer:$1"
+
+  lib_echo "Layer ARN"
+  lib_msg "$arn:$3"
+  lib_echo "Layer Contents"
+  aws --region "$2" lambda get-layer-version --layer-name "$arn" --version-number "$3" | jq -r .Content.Location | xargs curl -so "$1:$3.zip" && unzip -qo "$1:$3.zip" -d "$1:$3" && ls -l "$1:$3"
+  RET="$?"
 }
 
 # --------------------------- FUNCTIONS
 
 list-layers() {
+  lib_debug "$@"
   local compatibleRuntime
   local region
 
   compatibleRuntime="$1"
   region="$2"
-
-  checks "aws"
-  checks "curl"
 
   [ -z "$region" ] && region="$(aws configure get region)"
   [ -z "$region" ] && region="us-west-2"
@@ -142,9 +168,11 @@ list-layers() {
   else
     curl -fsSL "https://$region.layers.newrelic-external.com/get-layers?CompatibleRuntime=$compatibleRuntime" | jq .
   fi
+  lib_error_check
 }
 
 download-layers() {
+  lib_debug "$@"
   local layer
   local region
   local build
@@ -154,84 +182,102 @@ download-layers() {
   region="$2"
   build="$3"
 
-  checks "aws"
-  checks "curl"
-
   [ -z "$region" ] && region="$(aws configure get region)"
   [ -z "$region" ] && region="us-west-2"
-  [ -z "$layer" ] && listLayerNames "$region" && exit 0
-  [ -z "$build" ] && build=$(getLatestBuild "$region" "$layer")
+  [ -z "$layer" ] && lib_echo "Layer Names" && listLayerNames "$region" && exit 0
 
   checks "unzip"
   checks "xargs"
 
   if [ "$layer" == "all" ]; then
-    # while loop
-      # lib_echo "Layer ARN"
-      # arn="arn:aws:lambda:$region:451483290750:layer:$layer"
-      # lib_msg "$arn:$build"
-      lib_msg "todo: download all layers"
-      lib_echo "Download Layers"
-      # aws --region "$region" lambda get-layer-version --layer-name "$arn" --version-number "$build" | jq -r .Content.Location | xargs curl -so "$layer:$build.zip" && unzip -qo "$layer:$build.zip" -d "$layer:$build" && ls -l "$layer:$build"
-    # end
+    for l in $(listLayerNames "$region"); do
+      build=$(getLatestBuild "$region" "$l")
+      getLayer "$l" "$region" "$build"
+      lib_debug "$@"
+      lib_error_check "$l:$region:$build"
+    done
   else
-    lib_echo "Layer ARN"
-    arn="arn:aws:lambda:$region:451483290750:layer:$layer"
-    lib_msg "$arn:$build"
-    lib_echo "Download Layers"
-    aws --region "$region" lambda get-layer-version --layer-name "$arn" --version-number "$build" | jq -r .Content.Location | xargs curl -so "$layer:$build.zip" && unzip -qo "$layer:$build.zip" -d "$layer:$build" && ls -l "$layer:$build"
+    [ -z "$build" ] && build=$(getLatestBuild "$region" "$layer")
+    getLayer "$layer" "$region" "$build"
   fi
+  lib_error_check
 }
 
 eks-status() {
+  lib_debug "$@"
   lib_echo "Status"
   aws eks describe-cluster --name "$1" --query 'cluster.status' --output text
   lib_msg "nodegroup capacity: $(eksctl get ng --cluster "$1" -o json | jq -r '.[].DesiredCapacity')"
+  RET="$?"
+  lib_error_check
 }
 
 eks-start() {
+  lib_debug "$@"
   lib_echo "Start (scale up)"
   eksctl scale ng "$(getNodeGroup "$1")" --cluster "$1" -N "$2"
+  RET="$?"
+  lib_error_check
 }
 
 eks-stop() {
+  lib_debug "$@"
   lib_echo "Stop (scale down)"
   eksctl scale ng "$(getNodeGroup "$1")" --cluster "$1" -N 0
+  RET="$?"
+  lib_error_check
 }
 
 clusters() {
+  lib_debug
   lib_echo "Clusters"
   lib_msg "Getting EKS cluster names"
   aws eks list-clusters --output text
   # eksctl get cluster -o json | jq -r '.[].metadata.name'
+  RET="$?"
+  lib_error_check
 }
 
 status() {
+  lib_debug "$@"
   lib_echo "Status"
   aws ec2 describe-instance-status --instance-ids "$1"
+  RET="$?"
+  lib_error_check
 }
 
 start() {
+  lib_debug "$@"
   lib_echo "Start"
   aws ec2 start-instances --instance-ids "$1"
   updateSSH "$1"
+  lib_error_check
 }
 
 stop() {
+  lib_debug "$@"
   lib_echo "Stop"
   aws ec2 stop-instances --instance-ids "$1"
+  RET="$?"
+  lib_error_check
 }
 
 restart() {
+  lib_debug "$@"
   lib_echo "Restart"
   aws ec2 reboot-instances --instance-ids "$1"
+  RET="$?"
+  lib_error_check
 }
 
 ssh() {
+  lib_debug "$@"
   start "$1"
+  lib_error_check
 }
 
 ids() {
+  lib_debug
   lib_echo "Ids"
   lib_msg "Getting EC2 names and instanceIds"
   # aws ec2 describe-instances | jq -r '.Reservations[].Instances[] | .InstanceId as $id | .Tags[]? | select(.Key=="Name") | .Value as $value | [$value, $id] | @csv'
@@ -243,6 +289,8 @@ ids() {
   | .Value as $value
   | [$value, $id]
   | @csv'
+  RET="$?"
+  lib_error_check
 }
 
 usage() {
@@ -275,6 +323,9 @@ cs_thanks() {
 # $4: region (optional), if blank will use default region
 # $5: build (optional), if blank will get latest layers
 cs_lambda_go() {
+  checks "aws"
+  checks "curl"
+
   case "$2" in
   'list-layers')
     list-layers "$3" "$4"
@@ -359,8 +410,6 @@ cs_unset() {
 }
 
 # --------------------------  MAIN
-
-[ $CS_DEBUG -eq 1 ] && echo "arguments:" "$@"
 
 if [ "lambda" = "$1" ]; then
   # lambda
