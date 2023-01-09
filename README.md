@@ -58,35 +58,41 @@ unzip, xargs, and curl must also be available.
 
 ### EC2
 
+get a list of instances and their IDs
+
 ```sh
-# get a list of instances and their IDs
 cs start
 ```
 
+start an instance
+
 ```sh
-# start an instance
 cs start <your-instance-id>
 ```
 
+stop an instance
+
 ```sh
-# stop an instance
 cs eks stop <your-instance-id>
 ```
 
 ### EKS
 
+get a list of cluster names
+
 ```sh
-# get a list of cluster names
 cs eks start
 ```
 
+scale up an EKS node group to 2 nodes
+
 ```sh
-# scale up an EKS node group to 2 nodes
 cs eks start <your-cluster-name> 2
 ```
 
+stop an eks node group (scale down to 0 nodes)
+
 ```sh
-# stop an eks node group (scale down to 0 nodes)
 cs eks stop <your-cluster-name>
 ```
 
@@ -103,28 +109,33 @@ cs eks stop <your-cluster-name>
 
 ### Lambda
 
+get a list of compatible runtimes
+
 ```sh
-# get a list of compatible runtimes
 cs lambda list-layers
 ```
 
+get a list of layer names
+
 ```sh
-# get a list of layer names
 cs lambda download-layers
 ```
 
+download all layers and stat extension release dates
+
 ```sh
-# download all layers and stat extension release dates
 cs lambda download-layers all us-west-2 latest extension
 ```
 
+download all layers and stat agent release dates
+
 ```sh
-# download all layers and stat agent release dates
 cs lambda download-layers all us-west-2 latest agent
 ```
 
+download a specific layer build
+
 ```sh
-# download a specific layer build
 cs lambda download-layers NewRelicPython39 us-west-2 36
 ```
 
