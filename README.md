@@ -1,5 +1,16 @@
 # CloudScript
 
+<!-- START doctoc generated TOC please keep comment here to allow auto update -->
+<!-- DON'T EDIT THIS SECTION, INSTEAD RE-RUN doctoc TO UPDATE -->
+**Table of Contents**  *generated with [DocToc](https://github.com/thlorenz/doctoc)*
+
+- [Requirements](#requirements)
+- [Usage](#usage)
+  - [EKS](#eks)
+  - [Lambda](#lambda)
+
+<!-- END doctoc generated TOC please keep comment here to allow auto update -->
+
 A script for managing states of EC2 instances on AWS.
 
 ## Requirements
@@ -27,7 +38,7 @@ unzip, xargs, and curl must also be available.
 ./cs eks start|stop|status [cluster] [nodes]
 
 # Lambda
-./cs lambda list-layers (compatibleRuntime|all) (region) | download-layers (layer|all) (region) (build)"
+./cs lambda list-layers (compatibleRuntime|all) (region) | download-layers (layer|all) (region) (build#|latest) (extension|agent)"
 ```
 
 1. Copy `cs` to your PATH.
@@ -42,10 +53,42 @@ unzip, xargs, and curl must also be available.
     ```sh
     cs start|stop|restart|status|dns|user [instanceId]
     cs eks start|stop|status [cluster] [nodes]
-    cs lambda list-layers (compatibleRuntime|all) (region) | download-layers (layer|all) (region) (build)
+    cs lambda list-layers (compatibleRuntime|all) (region) | download-layers (layer|all) (region) (build#|latest) (extension|agent)
     ```
 
-For EKS:
+### EC2
+
+```sh
+# get a list of instances and their IDs
+cs start
+```
+
+```sh
+# start an instance
+cs start <your-instance-id>
+```
+
+```sh
+# stop an instance
+cs eks stop <your-instance-id>
+```
+
+### EKS
+
+```sh
+# get a list of cluster names
+cs eks start
+```
+
+```sh
+# scale up an EKS node group to 2 nodes
+cs eks start <your-cluster-name> 2
+```
+
+```sh
+# stop an eks node group (scale down to 0 nodes)
+cs eks stop <your-cluster-name>
+```
 
 - If leaving off the optional instanceId a list of instanceIds will be shown, but only those with a `Name` tag.
 
@@ -58,10 +101,36 @@ For EKS:
             ],
   ```
 
-For Lambda:
+### Lambda
+
+```sh
+# get a list of compatible runtimes
+cs lambda list-layers
+```
+
+```sh
+# get a list of layer names
+cs lambda download-layers
+```
+
+```sh
+# download all layers and stat extension release dates
+cs lambda download-layers all us-west-2 latest extension
+```
+
+```sh
+# download all layers and stat agent release dates
+cs lambda download-layers all us-west-2 latest agent
+```
+
+```sh
+# download a specific layer build
+cs lambda download-layers NewRelicPython39 us-west-2 36
+```
 
 - If leaving off the optional compatibleRuntime, a list of compatible runtimes is obtained.
 - If leaving off the optional region, the default region defined in your aws-cli is used.
 - If leaving off the optional build, the latest build is downloaded.
+- If leaving off the optional extension or agent, details for both will be displayed.
 
 *Tested on Ubuntu 22.04 with Bash version 5.1.16*

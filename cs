@@ -36,6 +36,7 @@ lib_msg() {
 # $2 -> string
 lib_error_check() {
   if [ "$RET" -gt 0 ]; then
+    lib_msg "RET=$RET"
     lib_msg "${FUNCNAME[1]}(${BASH_LINENO[0]}) - An error has occurred. ${1}${2}"
     exit 1
   fi
@@ -117,7 +118,6 @@ EOF
 }
 
 listCompatibleRuntimes() {
-  lib_echo "Compatible Runtimes"
   curl -fsSL "https://$1.layers.newrelic-external.com/get-layers" | jq -r '.Layers[].LatestMatchingVersion.CompatibleRuntimes[]' | sort | uniq
   RET="$?"
 }
@@ -140,12 +140,33 @@ getLatestBuild() {
 
 getLayer() {
   local arn
+  local xargsOpts
+  local unzipOpts
   arn="arn:aws:lambda:$2:451483290750:layer:$1"
 
-  lib_echo "Layer ARN"
-  lib_msg "$arn:$3"
-  lib_echo "Layer Contents"
-  aws --region "$2" lambda get-layer-version --layer-name "$arn" --version-number "$3" | jq -r .Content.Location | xargs curl -so "$1:$3.zip" && unzip -qo "$1:$3.zip" -d "$1:$3" && ls -l "$1:$3"
+  if [ "$CS_DEBUG" -eq 1 ]; then
+    xargsOpts="-o"
+    unzipOpts="-o"
+  else
+    xargsOpts="-so"
+    unzipOpts="-qo"
+  fi
+
+  if [ "$4" == "agent" ]; then
+    [[ "$1" == @(*Java*) ]] && aws --region "$2" lambda get-layer-version --layer-name "$arn" --version-number "$3" | jq -r .Content.Location | xargs curl "$xargsOpts" "$1:$3.zip" && unzip "$unzipOpts" "$1:$3.zip" -d "$1:$3" && stat --format="%y %n" "$1":"$3"/*/*/NewRelic*
+    [[ "$1" == @(*NodeJS*) ]] && aws --region "$2" lambda get-layer-version --layer-name "$arn" --version-number "$3" | jq -r .Content.Location | xargs curl "$xargsOpts" "$1:$3.zip" && unzip "$unzipOpts" "$1:$3.zip" -d "$1:$3" && stat --format="%y %n" "$1":"$3"/*/*/newrelic
+    [[ "$1" == @(*Python*) ]] && aws --region "$2" lambda get-layer-version --layer-name "$arn" --version-number "$3" | jq -r .Content.Location | xargs curl "$xargsOpts" "$1:$3.zip" && unzip "$unzipOpts" "$1:$3.zip" -d "$1:$3" && stat --format="%y %n" "$1":"$3"/*/*/*/*/newrelic/agent*
+    [[ "$1" == @(*Extension*) ]] && lib_msg "an agent does not exist in the $1 layer"
+    lib_error_check
+  elif [ "$4" == "extension" ]; then
+    aws --region "$2" lambda get-layer-version --layer-name "$arn" --version-number "$3" | jq -r .Content.Location | xargs curl "$xargsOpts" "$1:$3.zip" && unzip "$unzipOpts" "$1:$3.zip" -d "$1:$3" && stat --format="%y %n" "$1":"$3"/*/newrelic*
+    lib_error_check
+  else
+    lib_msg "------------------------------------------------------------"
+    lib_msg "$arn:$3"
+    aws --region "$2" lambda get-layer-version --layer-name "$arn" --version-number "$3" | jq -r .Content.Location | xargs curl "$xargsOpts" "$1:$3.zip" && unzip "$unzipOpts" "$1:$3.zip" -d "$1:$3" && ls -l "$1:$3"
+    lib_error_check
+  fi
   RET="$?"
 }
 
@@ -176,15 +197,17 @@ download-layers() {
   local layer
   local region
   local build
+  local glob
   local arn
 
   layer="$1"
   region="$2"
   build="$3"
+  glob="$4"
 
   [ -z "$region" ] && region="$(aws configure get region)"
   [ -z "$region" ] && region="us-west-2"
-  [ -z "$layer" ] && lib_echo "Layer Names" && listLayerNames "$region" && exit 0
+  [ -z "$layer" ] && listLayerNames "$region" && exit 0
 
   checks "unzip"
   checks "xargs"
@@ -192,13 +215,13 @@ download-layers() {
   if [ "$layer" == "all" ]; then
     for l in $(listLayerNames "$region"); do
       build=$(getLatestBuild "$region" "$l")
-      getLayer "$l" "$region" "$build"
+      getLayer "$l" "$region" "$build" "$glob"
       lib_debug "$@"
       lib_error_check "$l:$region:$build"
     done
   else
-    [ -z "$build" ] && build=$(getLatestBuild "$region" "$layer")
-    getLayer "$layer" "$region" "$build"
+    [ -z "$build" ] || [ "$build" == "latest" ] && build=$(getLatestBuild "$region" "$layer")
+    getLayer "$layer" "$region" "$build" "$glob"
   fi
   lib_error_check
 }
@@ -230,8 +253,6 @@ eks-stop() {
 
 clusters() {
   lib_debug
-  lib_echo "Clusters"
-  lib_msg "Getting EKS cluster names"
   aws eks list-clusters --output text
   # eksctl get cluster -o json | jq -r '.[].metadata.name'
   RET="$?"
@@ -278,9 +299,6 @@ ssh() {
 
 ids() {
   lib_debug
-  lib_echo "Ids"
-  lib_msg "Getting EC2 names and instanceIds"
-  # aws ec2 describe-instances | jq -r '.Reservations[].Instances[] | .InstanceId as $id | .Tags[]? | select(.Key=="Name") | .Value as $value | [$value, $id] | @csv'
   aws ec2 describe-instances | jq -r '
   .Reservations[].Instances[]
   | .InstanceId as $id
@@ -299,7 +317,7 @@ usage() {
   echo "--------------------------------"
   echo "EC2    Usage: $1        start|stop|restart|status|ssh [instanceId]"
   echo "EKS    Usage: $1 eks    start [cluster] [nodes] | stop|status [cluster]"
-  echo "Lambda Usage: $1 lambda list-layers (compatibleRuntime|all) (region) | download-layers (layer|all) (region) (build)"
+  echo "Lambda Usage: $1 lambda list-layers (compatibleRuntime|all) (region) | download-layers (layer|all) (region) (build#|latest) (extension|agent)"
   echo
 }
 
@@ -321,7 +339,8 @@ cs_thanks() {
 # list-layers
 # $3: compatibleRuntime|layer|all (optional), if blank will get a list of compatible runtimes or layer names
 # $4: region (optional), if blank will use default region
-# $5: build (optional), if blank will get latest layers
+# $5: build#|latest (optional), if blank will get latest layers
+# $6: extension|agent (optional), if blank will show details for both
 cs_lambda_go() {
   checks "aws"
   checks "curl"
@@ -331,7 +350,7 @@ cs_lambda_go() {
     list-layers "$3" "$4"
     ;;
   'download-layers')
-    download-layers "$3" "$4" "$5"
+    download-layers "$3" "$4" "$5" "$6"
     ;;
   *)
     usage "$0"
