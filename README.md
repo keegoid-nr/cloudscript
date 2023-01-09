@@ -11,7 +11,7 @@
 
 <!-- END doctoc generated TOC please keep comment here to allow auto update -->
 
-A script for managing states of EC2 instances on AWS.
+A script for managing states of [EC2 instances](https://aws.amazon.com/ec2/) and [EKS clusters](https://aws.amazon.com/eks/) on AWS and getting info about published [New Relic Lambda layers](https://aws.amazon.com/eks/).
 
 ## Requirements
 
