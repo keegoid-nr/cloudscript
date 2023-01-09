@@ -154,7 +154,7 @@ getLayer() {
 
   if [ "$4" == "agent" ]; then
     [[ "$1" == @(*Java*) ]] && aws --region "$2" lambda get-layer-version --layer-name "$arn" --version-number "$3" | jq -r .Content.Location | xargs curl "$xargsOpts" "$1:$3.zip" && unzip "$unzipOpts" "$1:$3.zip" -d "$1:$3" && stat --format="%y %n" "$1":"$3"/*/*/NewRelic*
-    [[ "$1" == @(*NodeJS*) ]] && aws --region "$2" lambda get-layer-version --layer-name "$arn" --version-number "$3" | jq -r .Content.Location | xargs curl "$xargsOpts" "$1:$3.zip" && unzip "$unzipOpts" "$1:$3.zip" -d "$1:$3" && stat --format="%y %n" "$1":"$3"/*/*/newrelic
+    [[ "$1" == @(*NodeJS*) ]] && aws --region "$2" lambda get-layer-version --layer-name "$arn" --version-number "$3" | jq -r .Content.Location | xargs curl "$xargsOpts" "$1:$3.zip" && unzip "$unzipOpts" "$1:$3.zip" -d "$1:$3" && stat --format="%y %n" "$1":"$3"/*/*/newrelic/newrelic*
     [[ "$1" == @(*Python*) ]] && aws --region "$2" lambda get-layer-version --layer-name "$arn" --version-number "$3" | jq -r .Content.Location | xargs curl "$xargsOpts" "$1:$3.zip" && unzip "$unzipOpts" "$1:$3.zip" -d "$1:$3" && stat --format="%y %n" "$1":"$3"/*/*/*/*/newrelic/agent*
     [[ "$1" == @(*Extension*) ]] && lib_msg "an agent does not exist in the $1 layer"
     lib_error_check
