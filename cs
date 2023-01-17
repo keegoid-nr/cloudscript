@@ -333,7 +333,7 @@ cs_unset() {
 }
 
 cs_version() {
-  printVersion "v0.6"
+  printVersion "v0.7"
   cs_unset
 }
 
