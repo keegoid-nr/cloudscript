@@ -329,11 +329,11 @@ ssh() {
 # unset functions to free up memmory
 cs_unset() {
   unset -f cs_version cs_usage cs_thanks cs_lambda_go cs_eks_go cs_ec2_go
-  exit "$1"
+  exit $1
 }
 
 cs_version() {
-  printVersion "v0.6"
+  printVersion "v0.7"
   cs_unset
 }
 
@@ -355,7 +355,7 @@ cs_usage() {
   echo "  eks stop|status [cluster]"
   echo "  lambda list-layers (compatibleRuntime|all) (region)"
   echo "  lambda download-layers (layer|all) (region) (build#|latest) (extension|agent)"
-  cs_unset "$1"
+  cs_unset $1
 }
 
 # display message before exit
