@@ -28,52 +28,54 @@ unzip, xargs, and curl must also be available.
 
 ## Usage
 
-```sh
-# cs command [required] (optional)
+```log
+Usage: cs [OPTIONS] COMPONENT COMMAND [REQUIRED ARGS]... (OPTIONAL ARGS)...
 
-# EC2
-./cs start|stop|restart|status|dns [instanceId]
+Options:
+  -v, --version  Show version
+  --help         Show this message and exit.
 
-# EKS
-./cs eks start|stop|status [cluster] [nodes]
+Components:
+  ec2            Manage EC2 instance states
+  eks            Manage EKS node states
+  lambda         List and download New Relic Lambda layers
 
-# Lambda
-./cs lambda list-layers (compatibleRuntime|all) (region) | download-layers (layer|all) (region) (build#|latest) (extension|agent)"
+Commands and Args:
+  ec2 start|stop|restart|status|ssh [instanceId]
+  eks start [cluster] [number of nodes]
+  eks stop|status [cluster]
+  lambda list-layers (compatibleRuntime|all) (region)
+  lambda download-layers (layer|all) (region) (build#|latest) (extension|agent)
 ```
 
 1. Copy `cs` to your PATH.
-1. Verify it is showing up with:
+1. Verify it is in your path.
 
     ```sh
     which cs
+    cs --version
     ```
 
-1. Then run with:
-
-    ```sh
-    cs start|stop|restart|status|dns|user [instanceId]
-    cs eks start|stop|status [cluster] [nodes]
-    cs lambda list-layers (compatibleRuntime|all) (region) | download-layers (layer|all) (region) (build#|latest) (extension|agent)
-    ```
+1. Run a command (see below examples).
 
 ### EC2
 
 get a list of instances and their IDs
 
 ```sh
-cs start
+cs ec2 start
 ```
 
 start an instance
 
 ```sh
-cs start <your-instance-id>
+cs ec2 start <your-instance-id>
 ```
 
 stop an instance
 
 ```sh
-cs eks stop <your-instance-id>
+cs ec2 stop <your-instance-id>
 ```
 
 ### EKS
