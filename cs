@@ -140,6 +140,7 @@ getLatestBuild() {
   | [$build]
   | @csv'
   RET="$?"
+  [[ $RET -gt 0 ]] && listLayerNames "$1" && exit 0
 }
 
 getLayer() {
@@ -225,8 +226,16 @@ download-layers() {
     done
   else
     [[ -z $build ]] || [[ $build == latest ]] && build=$(getLatestBuild "$region" "$layer")
-    getLayer "$layer" "$region" "$build" "$glob"
+    if [[ -z $build ]]; then
+      lib_msg "-------------------------------------------------------"
+      lib_msg "- check that your layer name is correct and try again -"
+      lib_msg "-------------------------------------------------------"
+      listLayerNames "$region" && exit 0
+    else
+      getLayer "$layer" "$region" "$build" "$glob"
+    fi
   fi
+  RET="$?"
   lib_error_check
 }
 
