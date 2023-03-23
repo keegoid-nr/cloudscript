@@ -244,8 +244,9 @@ download-layers() {
 }
 
 clusters() {
-  lib-debug
-  aws eks list-clusters --output text
+  lib-debug "$@"
+  aws eks list-clusters | jq -r '.clusters[] | .'
+  # aws eks list-clusters --output text
   # eksctl get cluster -o json | jq -r '.[].metadata.name'
   RET="$?"
   lib-error-check
@@ -253,7 +254,7 @@ clusters() {
 
 eks-status() {
   lib-debug "$@"
-  [[ -z $1 ]] && clusters && cs-unset 1
+  [[ -z $1 ]] && clusters "$@" && cs-unset 1
   lib-echo "Status"
   aws eks describe-cluster --name "$1" --query 'cluster.status' --output text
   lib-msg "nodegroup capacity: $(eksctl get ng --cluster "$1" -o json | jq -r '.[].DesiredCapacity')"
@@ -263,7 +264,7 @@ eks-status() {
 
 eks-start() {
   lib-debug "$@"
-  [[ -z $1 ]] && clusters && cs-unset 1
+  [[ -z $1 ]] && clusters "$@" && cs-unset 1
   [[ -z $2 ]] && cs-usage 1
   lib-echo "Start (scale up)"
   eksctl scale ng "$(get-node-group "$1")" --cluster "$1" -N "$2"
@@ -273,7 +274,7 @@ eks-start() {
 
 eks-stop() {
   lib-debug "$@"
-  [[ -z $1 ]] && clusters && cs-unset 1
+  [[ -z $1 ]] && clusters "$@" && cs-unset 1
   lib-echo "Stop (scale down)"
   eksctl scale ng "$(get-node-group "$1")" --cluster "$1" -N 0
   RET="$?"
@@ -281,7 +282,7 @@ eks-stop() {
 }
 
 ids() {
-  lib-debug
+  lib-debug "$@"
   aws ec2 describe-instances | jq -r '
   .Reservations[].Instances[]
   | .InstanceId as $id
@@ -296,7 +297,7 @@ ids() {
 
 status() {
   lib-debug "$@"
-  [[ -z $1 ]] && ids && cs-unset 1
+  [[ -z $1 ]] && ids "$@" && cs-unset 1
   lib-echo "Status"
   aws ec2 describe-instance-status --instance-ids "$1"
   RET="$?"
