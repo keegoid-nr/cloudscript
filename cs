@@ -348,7 +348,7 @@ cs-unset() {
 }
 
 cs-version() {
-  print-version "v0.8"
+  print-version "v0.9"
   cs-unset
 }
 
