@@ -1,4 +1,10 @@
-#!/bin/bash
+#!/usr/bin/env bash
+
+# Determine the shell that the script is being run from
+if [ -n "$ZSH_VERSION" ]; then
+  The script is being run from zsh
+  emulate -LR zsh
+fi
 
 # -----------------------------------------------------
 # CloudScript
@@ -15,36 +21,34 @@
 
 # --------------------------  LIBRARIES
 
-lib_has() {
+lib-has() {
   type "$1" >/dev/null 2>&1
 }
 
-lib_echo() {
-  echo
+lib-echo() {
   echo "~~~ ${1} ~~~"
-  echo
 }
 
 # output message with encoded characters
 # $1 -> string
-lib_msg() {
+lib-msg() {
   echo -e "$1"
 }
 
 # display error message
 # $1 -> string
 # $2 -> string
-lib_error_check() {
+lib-error-check() {
   if [[ $RET -gt 0 ]]; then
-    lib_msg "RET=$RET"
-    lib_msg "${FUNCNAME[1]}(${BASH_LINENO[0]}) - An error has occurred. ${1}${2}"
+    lib-msg "RET=$RET"
+    lib-msg "${FUNCNAME[1]}(${BASH_LINENO[0]}) - An error has occurred. ${1}${2}"
     exit 1
   fi
 }
 
 # display debug info
-lib_debug() {
-  [[ $CS_DEBUG -eq 1 ]] && lib_msg "${FUNCNAME[1]}(${BASH_LINENO[0]}) - ARGS: $*"
+lib-debug() {
+  [[ $CS_DEBUG -eq 1 ]] && lib-msg "${FUNCNAME[1]}(${BASH_LINENO[0]}) - ARGS: $*"
 }
 
 # --------------------------  SETUP PARAMETERS
@@ -54,54 +58,54 @@ SSH_CONFIG="$HOME/.ssh/config"
 
 # --------------------------- HELPER FUNCTIONS
 
-cs_exit() {
+cs-exit() {
   echo >&2 "Please install $1 before running this script."
   exit 1
 }
 
 # $1: additional requirement
 checks() {
-  if ! lib_has aws; then cs_exit "aws cli v2"; fi
-  if ! lib_has jq; then cs_exit "jq"; fi
+  if ! lib-has aws; then cs-exit "aws cli v2"; fi
+  if ! lib-has jq; then cs-exit "jq"; fi
   if [[ -n $1 ]]; then
-    if ! lib_has "$1"; then cs_exit "$1"; fi
+    if ! lib-has "$1"; then cs-exit "$1"; fi
   fi
   if [ "$CS_DEBUG" -eq 1 ]; then
-    if ! lib_has brew; then cs_exit "brew"; fi
+    if ! lib-has brew; then cs-exit "brew"; fi
   fi
   if ! aws sts get-caller-identity >/dev/null; then exit 1; fi
   RET="$?"
 }
 
-printVersion() {
-  lib_msg "CloudScript $1"
+print-version() {
+  lib-msg "CloudScript $1"
 }
 
-getNodeGroup() {
+get-node-group() {
   eksctl get ng --cluster "$1" -o json | jq -r '.[].Name'
   RET="$?"
 }
 
-getPublicDns() {
+get-public-dns() {
   aws ec2 describe-instances --instance-ids "$1" --query 'Reservations[*].Instances[*].PublicDnsName' --output text
   RET="$?"
 }
 
-updateSSH() {
+update-ssh() {
   local hostname
   local currentUser
-  lib_msg "Checking if instance $1 is running"
+  lib-msg "Checking if instance $1 is running"
   aws ec2 wait instance-running --instance-ids "$1"
-  lib_msg "Getting public DNS name"
-  hostname=$(getPublicDns "$1")
-  lib_msg "\nCurrent ~/.ssh/config:"
+  lib-msg "Getting public DNS name"
+  hostname=$(get-public-dns "$1")
+  lib-msg "\nCurrent ~/.ssh/config:"
   cat ~/.ssh/config
   echo
-  lib_msg "Enter a \"Host\" to update from $SSH_CONFIG"
+  lib-msg "Enter a \"Host\" to update from $SSH_CONFIG"
   echo
   read -erp "   : " match
   currentUser=$(sed -rne "/$match/,/User/ {s/.*User (.*)/\1/p}" "$SSH_CONFIG")
-  lib_msg "Enter a \"User\" to update from $SSH_CONFIG"
+  lib-msg "Enter a \"User\" to update from $SSH_CONFIG"
   read -erp "   : " -i "$currentUser" username
   echo
   if grep -q "$match" "$SSH_CONFIG"; then
@@ -116,22 +120,22 @@ Host $match
   User $username
 EOF
   fi
-  lib_msg "\nModified ~/.ssh/config:"
+  lib-msg "\nModified ~/.ssh/config:"
   cat ~/.ssh/config
   RET="$?"
 }
 
-listCompatibleRuntimes() {
+list-compatible-runtimes() {
   curl -fsSL "https://$1.layers.newrelic-external.com/get-layers" | jq -r '.Layers[].LatestMatchingVersion.CompatibleRuntimes[]' | sort | uniq
   RET="$?"
 }
 
-listLayerNames() {
+list-layer-names() {
   curl -fsSL "https://$1.layers.newrelic-external.com/get-layers" | jq -r '.Layers[].LayerName' | sort | uniq
   RET="$?"
 }
 
-getLatestBuild() {
+get-latest-build() {
   curl -fsSL "https://$1.layers.newrelic-external.com/get-layers" | jq -r --arg LAYER "$2" '
   .Layers[]
   | .LayerName as $name
@@ -140,10 +144,10 @@ getLatestBuild() {
   | [$build]
   | @csv'
   RET="$?"
-  [[ $RET -gt 0 ]] && listLayerNames "$1" && exit 0
+  [[ $RET -gt 0 ]] && list-layer-names "$1" && exit 0
 }
 
-getLayer() {
+get-layer() {
   local arn
   local xargsOpts
   local unzipOpts
@@ -158,19 +162,19 @@ getLayer() {
   fi
 
   if [[ $4 == agent ]]; then
-    [[ $1 == @(*Java*) ]] && aws --region "$2" lambda get-layer-version --layer-name "$arn" --version-number "$3" | jq -r .Content.Location | xargs curl "$xargsOpts" "$1:$3.zip" && unzip "$unzipOpts" "$1:$3.zip" -d "$1:$3" && stat --format="%y %n" "$1":"$3"/*/*/NewRelic*
-    [[ $1 == @(*NodeJS*) ]] && aws --region "$2" lambda get-layer-version --layer-name "$arn" --version-number "$3" | jq -r .Content.Location | xargs curl "$xargsOpts" "$1:$3.zip" && unzip "$unzipOpts" "$1:$3.zip" -d "$1:$3" && stat --format="%y %n" "$1":"$3"/*/*/newrelic/newrelic*
-    [[ $1 == @(*Python*) ]] && aws --region "$2" lambda get-layer-version --layer-name "$arn" --version-number "$3" | jq -r .Content.Location | xargs curl "$xargsOpts" "$1:$3.zip" && unzip "$unzipOpts" "$1:$3.zip" -d "$1:$3" && stat --format="%y %n" "$1":"$3"/*/*/*/*/newrelic/agent*
-    [[ $1 == @(*Extension*) ]] && lib_msg "an agent does not exist in the $1 layer"
-    lib_error_check
+    [[ $1 == @(*Java*) ]] && aws --region "$2" lambda get-layer-version --layer-name "$arn" --version-number "$3" | jq -r .Content.Location | xargs curl "$xargsOpts" "$1:$3.zip" && unzip "$unzipOpts" "$1:$3.zip" -d "$1:$3" && stat -c "%y %n" "$1":"$3"/*/*/NewRelic*
+    [[ $1 == @(*NodeJS*) ]] && aws --region "$2" lambda get-layer-version --layer-name "$arn" --version-number "$3" | jq -r .Content.Location | xargs curl "$xargsOpts" "$1:$3.zip" && unzip "$unzipOpts" "$1:$3.zip" -d "$1:$3" && stat -c "%y %n" "$1":"$3"/*/*/newrelic/newrelic*
+    [[ $1 == @(*Python*) ]] && aws --region "$2" lambda get-layer-version --layer-name "$arn" --version-number "$3" | jq -r .Content.Location | xargs curl "$xargsOpts" "$1:$3.zip" && unzip "$unzipOpts" "$1:$3.zip" -d "$1:$3" && stat -c "%y %n" "$1":"$3"/*/*/*/*/newrelic/agent*
+    [[ $1 == @(*Extension*) ]] && lib-msg "an agent does not exist in the $1 layer"
+    lib-error-check
   elif [[ $4 == extension ]]; then
-    aws --region "$2" lambda get-layer-version --layer-name "$arn" --version-number "$3" | jq -r .Content.Location | xargs curl "$xargsOpts" "$1:$3.zip" && unzip "$unzipOpts" "$1:$3.zip" -d "$1:$3" && stat --format="%y %n" "$1":"$3"/*/newrelic*
-    lib_error_check
+    aws --region "$2" lambda get-layer-version --layer-name "$arn" --version-number "$3" | jq -r .Content.Location | xargs curl "$xargsOpts" "$1:$3.zip" && unzip "$unzipOpts" "$1:$3.zip" -d "$1:$3" && stat -c "%y %n" "$1":"$3"/*/newrelic*
+    lib-error-check
   else
-    lib_msg "------------------------------------------------------------"
-    lib_msg "$arn:$3"
+    lib-msg "------------------------------------------------------------"
+    lib-msg "$arn:$3"
     aws --region "$2" lambda get-layer-version --layer-name "$arn" --version-number "$3" | jq -r .Content.Location | xargs curl "$xargsOpts" "$1:$3.zip" && unzip "$unzipOpts" "$1:$3.zip" -d "$1:$3" && ls -l "$1:$3"
-    lib_error_check
+    lib-error-check
   fi
   RET="$?"
 }
@@ -178,7 +182,7 @@ getLayer() {
 # --------------------------- FUNCTIONS
 
 list-layers() {
-  lib_debug "$@"
+  lib-debug "$@"
   local compatibleRuntime
   local region
 
@@ -187,18 +191,18 @@ list-layers() {
 
   [[ -z $region ]] && region="$(aws configure get region)"
   [[ -z $region ]] && region="us-west-2"
-  [[ -z $compatibleRuntime ]] && listCompatibleRuntimes "$region" && exit 0
+  [[ -z $compatibleRuntime ]] && list-compatible-runtimes "$region" && exit 0
 
   if [[ $compatibleRuntime == all ]]; then
     curl -fsSL "https://$region.layers.newrelic-external.com/get-layers" | jq .
   else
     curl -fsSL "https://$region.layers.newrelic-external.com/get-layers?CompatibleRuntime=$compatibleRuntime" | jq .
   fi
-  lib_error_check
+  lib-error-check
 }
 
 download-layers() {
-  lib_debug "$@"
+  lib-debug "$@"
   local layer
   local region
   local build
@@ -212,72 +216,73 @@ download-layers() {
 
   [[ -z $region ]] && region="$(aws configure get region)"
   [[ -z $region ]] && region="us-west-2"
-  [[ -z $layer ]] && listLayerNames "$region" && exit 0
+  [[ -z $layer ]] && list-layer-names "$region" && exit 0
 
   checks "unzip"
   checks "xargs"
 
   if [[ $layer == all ]]; then
-    for l in $(listLayerNames "$region"); do
-      build=$(getLatestBuild "$region" "$l")
-      getLayer "$l" "$region" "$build" "$glob"
-      lib_debug "$@"
-      lib_error_check "$l:$region:$build"
+    for l in $(list-layer-names "$region"); do
+      build=$(get-latest-build "$region" "$l")
+      get-layer "$l" "$region" "$build" "$glob"
+      lib-debug "$@"
+      lib-error-check "$l:$region:$build"
     done
   else
-    [[ -z $build ]] || [[ $build == latest ]] && build=$(getLatestBuild "$region" "$layer")
+    [[ -z $build ]] || [[ $build == latest ]] && build=$(get-latest-build "$region" "$layer")
     if [[ -z $build ]]; then
-      lib_msg "-------------------------------------------------------"
-      lib_msg "- check that your layer name is correct and try again -"
-      lib_msg "-------------------------------------------------------"
-      listLayerNames "$region" && exit 0
+      lib-msg "-------------------------------------------------------"
+      lib-msg "- check that your layer name is correct and try again -"
+      lib-msg "-------------------------------------------------------"
+      list-layer-names "$region" && exit 0
     else
-      getLayer "$layer" "$region" "$build" "$glob"
+      get-layer "$layer" "$region" "$build" "$glob"
     fi
   fi
   RET="$?"
-  lib_error_check
+  lib-error-check
 }
 
 clusters() {
-  lib_debug
-  aws eks list-clusters --output text
+  lib-debug "$@"
+  aws eks list-clusters | jq -r '.clusters[] | .'
+  # aws eks list-clusters --output text
   # eksctl get cluster -o json | jq -r '.[].metadata.name'
   RET="$?"
-  lib_error_check
+  lib-error-check
 }
 
 eks-status() {
-  lib_debug "$@"
-  [[ -z $1 ]] && clusters && cs_unset 1
-  lib_echo "Status"
+  lib-debug "$@"
+  [[ -z $1 ]] && clusters "$@" && cs-unset 1
+  lib-echo "Status"
   aws eks describe-cluster --name "$1" --query 'cluster.status' --output text
-  lib_msg "nodegroup capacity: $(eksctl get ng --cluster "$1" -o json | jq -r '.[].DesiredCapacity')"
+  lib-msg "nodegroup capacity: $(eksctl get ng --cluster "$1" -o json | jq -r '.[].DesiredCapacity')"
   RET="$?"
-  lib_error_check
+  lib-error-check
 }
 
 eks-start() {
-  lib_debug "$@"
-  [[ -z $1 ]] && clusters && cs_unset 1
-  [[ -z $2 ]] && cs_usage 1
-  lib_echo "Start (scale up)"
-  eksctl scale ng "$(getNodeGroup "$1")" --cluster "$1" -N "$2"
+  lib-debug "$@"
+  [[ -z $1 ]] && clusters "$@" && cs-unset 1
+  [[ -z $2 ]] && cs-usage 1
+  lib-echo "Start (scale up)"
+  eksctl scale ng "$(get-node-group "$1")" --cluster "$1" -N "$2"
   RET="$?"
-  lib_error_check
+  lib-error-check
 }
 
 eks-stop() {
-  lib_debug "$@"
-  [[ -z $1 ]] && clusters && cs_unset 1
-  lib_echo "Stop (scale down)"
-  eksctl scale ng "$(getNodeGroup "$1")" --cluster "$1" -N 0
+  lib-debug "$@"
+  [[ -z $1 ]] && clusters "$@" && cs-unset 1
+  lib-echo "Stop (scale down)"
+  eksctl scale ng "$(get-node-group "$1")" --cluster "$1" -N 0
   RET="$?"
-  lib_error_check
+  lib-error-check
 }
 
 ids() {
-  lib_debug
+  lib-debug "$@"
   aws ec2 describe-instances | jq -r '
   .Reservations[].Instances[]
   | .InstanceId as $id
@@ -287,66 +292,68 @@ ids() {
   | [$value, $id]
   | @csv'
   RET="$?"
-  lib_error_check
+  lib-error-check
 }
 
 status() {
-  lib_debug "$@"
-  [[ -z $1 ]] && ids && cs_unset 1
-  lib_echo "Status"
+  lib-debug "$@"
+  [[ -z $1 ]] && ids "$@" && cs-unset 1
+  lib-echo "Status"
   aws ec2 describe-instance-status --instance-ids "$1"
   RET="$?"
-  lib_error_check
+  lib-error-check
 }
 
 start() {
-  lib_debug "$@"
-  [[ -z $1 ]] && ids && cs_unset 1
-  lib_echo "Start"
+  lib-debug "$@"
+  [[ -z $1 ]] && ids && cs-unset 1
+  lib-echo "Start"
   aws ec2 start-instances --instance-ids "$1"
-  updateSSH "$1"
-  lib_error_check
+  RET="$?"
+  lib-error-check
+  update-ssh "$1"
+  RET="$?"
+  lib-error-check
 }
 
 stop() {
-  lib_debug "$@"
-  [[ -z $1 ]] && ids && cs_unset 1
-  lib_echo "Stop"
+  lib-debug "$@"
+  [[ -z $1 ]] && ids && cs-unset 1
+  lib-echo "Stop"
   aws ec2 stop-instances --instance-ids "$1"
   RET="$?"
-  lib_error_check
+  lib-error-check
 }
 
 restart() {
-  lib_debug "$@"
-  [[ -z $1 ]] && ids && cs_unset 1
-  lib_echo "Restart"
+  lib-debug "$@"
+  [[ -z $1 ]] && ids && cs-unset 1
+  lib-echo "Restart"
   aws ec2 reboot-instances --instance-ids "$1"
   RET="$?"
-  lib_error_check
+  lib-error-check
 }
 
 ssh() {
-  lib_debug "$@"
-  [[ -z $1 ]] && ids && cs_unset 1
+  lib-debug "$@"
+  [[ -z $1 ]] && ids && cs-unset 1
   start "$1"
-  lib_error_check
 }
 
 # --------------------------- CLI
 
 # unset functions to free up memmory
-cs_unset() {
-  unset -f cs_version cs_usage cs_thanks cs_lambda_go cs_eks_go cs_ec2_go
+cs-unset() {
+  unset -f cs-version cs-usage cs-thanks cs-lambda-go cs-eks-go cs-ec2-go
   exit $1
 }
 
-cs_version() {
-  printVersion "v0.8"
-  cs_unset
+cs-version() {
+  print-version "v0.9"
+  cs-unset
 }
 
-cs_usage() {
+cs-usage() {
   echo "Usage: cs [OPTIONS] COMPONENT COMMAND [REQUIRED ARGS]... (OPTIONAL ARGS)..."
   echo
   echo "Options:"
@@ -364,19 +371,18 @@ cs_usage() {
   echo "  eks stop|status [cluster]"
   echo "  lambda list-layers (compatibleRuntime|all) (region)"
   echo "  lambda download-layers (layer|all) (region) (build#|latest) (extension|agent)"
-  cs_unset $1
+  cs-unset $1
 }
 
 # display message before exit
-cs_thanks() {
-  echo
-  if lib_has figlet; then
+cs-thanks() {
+  if lib-has figlet; then
     figlet -f small "CloudScript"
   else
-    lib_msg "CloudScript"
+    lib-msg "CloudScript"
   fi
-  lib_msg "Made with <3 by Keegan Mullaney, a Senior Technical Support Engineer at New Relic."
-  cs_unset 0
+  lib-msg "Made with <3 by Keegan Mullaney, a Senior Technical Support Engineer at New Relic."
+  cs-unset 0
 }
 
 # $1: lambda
@@ -386,7 +392,7 @@ cs_thanks() {
 # $4: region (optional), if blank will use default region
 # $5: build#|latest (optional), if blank will get latest layers
 # $6: extension|agent (optional), if blank will show details for both
-cs_lambda_go() {
+cs-lambda-go() {
   checks "aws"
   checks "curl"
 
@@ -395,10 +401,10 @@ cs_lambda_go() {
     list-layers "$3" "$4"
     ;;
   'download-layers')
-    download-layers "$3" "$4" "$5" "$6"
+   download-layers "$3" "$4" "$5" "$6"
     ;;
   *)
-    cs_usage 1
+    cs-usage 1
     ;;
   esac
 }
@@ -407,7 +413,7 @@ cs_lambda_go() {
 # $2: operation
 # $3: cluster name (optional), if blank will get list of available clusters
 # $4: node count for scaling up
-cs_eks_go() {
+cs-eks-go() {
   checks "eksctl"
 
   case "$2" in
@@ -421,14 +427,14 @@ cs_eks_go() {
     eks-status "$3"
     ;;
   *)
-    cs_usage 1
+    cs-usage 1
     ;;
   esac
 }
 
 # $1: operation
 # $2: instanceId (optional), if blank will get list of available instanceIds
-cs_ec2_go() {
+cs-ec2-go() {
   checks
 
   case "$2" in
@@ -448,27 +454,31 @@ cs_ec2_go() {
     ssh "$3"
     ;;
   *)
-    cs_usage 1
+    cs-usage 1
     ;;
   esac
 }
 
 # --------------------------  MAIN
 
-if [[ "-v" == "$1" ]] || [[ "--version" == "$1" ]]; then
-  cs_version "$1"
-elif [[ "--help" == "$1" ]]; then
-  cs_usage 0
-elif [[ lambda == "$1" ]]; then
-  # lambda
-  cs_lambda_go "$@"
-elif [[ eks == "$1" ]]; then
-  # eks
-  cs_eks_go "$@"
-elif [[ ec2 == "$1" ]]; then
-  # ec2
-  cs_ec2_go "$@"
-else
- cs_usage 1
-fi
-cs_thanks
+# capture input array
+userCommand=("$@")
+
+for c in ${userCommand[0]}; do
+  [[ $CS_DEBUG == 1 ]] && echo "$c"
+  if [[ $c == "-v" ]] || [[ $c == "--version" ]]; then
+    cs-version "$c"
+  elif [[ $c == "--help" ]]; then
+    cs-usage 0
+  elif [[ $c == "lambda" ]]; then
+    cs-lambda-go "${userCommand[@]}"
+  elif [[ $c == "eks" ]]; then
+    cs-eks-go "${userCommand[@]}"
+  elif [[ $c == "ec2" ]]; then
+    cs-ec2-go "${userCommand[@]}"
+  else
+    cs-usage 1
+  fi
+done
+
+cs-thanks
