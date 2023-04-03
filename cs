@@ -55,6 +55,7 @@ lib-debug() {
 
 [[ -z $CS_DEBUG ]] && CS_DEBUG=0
 SSH_CONFIG="$HOME/.ssh/config"
+VERSION="v1.0"
 
 # --------------------------- HELPER FUNCTIONS
 
@@ -69,9 +70,6 @@ checks() {
   if ! lib-has jq; then cs-exit "jq"; fi
   if [[ -n $1 ]]; then
     if ! lib-has "$1"; then cs-exit "$1"; fi
-  fi
-  if [ "$CS_DEBUG" -eq 1 ]; then
-    if ! lib-has brew; then cs-exit "brew"; fi
   fi
   if ! aws sts get-caller-identity >/dev/null; then exit 1; fi
   RET="$?"
@@ -136,13 +134,7 @@ list-layer-names() {
 }
 
 get-latest-build() {
-  curl -fsSL "https://$1.layers.newrelic-external.com/get-layers" | jq -r --arg LAYER "$2" '
-  .Layers[]
-  | .LayerName as $name
-  | .LatestMatchingVersion.Version as $build
-  | select($name==$LAYER)
-  | [$build]
-  | @csv'
+  curl -fsSL "https://$1.layers.newrelic-external.com/get-layers" | jq -r --arg LAYER "$2" '.Layers[] | select(.LayerName == $LAYER) | .LatestMatchingVersion.Version'
   RET="$?"
   [[ $RET -gt 0 ]] && list-layer-names "$1" && exit 0
 }
@@ -162,18 +154,18 @@ get-layer() {
   fi
 
   if [[ $4 == agent ]]; then
-    [[ $1 == @(*Java*) ]] && aws --region "$2" lambda get-layer-version --layer-name "$arn" --version-number "$3" | jq -r .Content.Location | xargs curl "$xargsOpts" "$1:$3.zip" && unzip "$unzipOpts" "$1:$3.zip" -d "$1:$3" && stat -c "%y %n" "$1":"$3"/*/*/NewRelic*
-    [[ $1 == @(*NodeJS*) ]] && aws --region "$2" lambda get-layer-version --layer-name "$arn" --version-number "$3" | jq -r .Content.Location | xargs curl "$xargsOpts" "$1:$3.zip" && unzip "$unzipOpts" "$1:$3.zip" -d "$1:$3" && stat -c "%y %n" "$1":"$3"/*/*/newrelic/newrelic*
-    [[ $1 == @(*Python*) ]] && aws --region "$2" lambda get-layer-version --layer-name "$arn" --version-number "$3" | jq -r .Content.Location | xargs curl "$xargsOpts" "$1:$3.zip" && unzip "$unzipOpts" "$1:$3.zip" -d "$1:$3" && stat -c "%y %n" "$1":"$3"/*/*/*/*/newrelic/agent*
+    [[ $1 == @(*Java*) ]] && aws --region "$2" lambda get-layer-version --layer-name "$arn" --version-number "$3" --query 'Content.Location' --output text | xargs curl "$xargsOpts" "$1:$3.zip" && unzip "$unzipOpts" "$1:$3.zip" -d "$1:$3" && stat -c "%y %n" "$1":"$3"/*/*/NewRelic*
+    [[ $1 == @(*NodeJS*) ]] && aws --region "$2" lambda get-layer-version --layer-name "$arn" --version-number "$3" --query 'Content.Location' --output text | xargs curl "$xargsOpts" "$1:$3.zip" && unzip "$unzipOpts" "$1:$3.zip" -d "$1:$3" && stat -c "%y %n" "$1":"$3"/*/*/newrelic/newrelic*
+    [[ $1 == @(*Python*) ]] && aws --region "$2" lambda get-layer-version --layer-name "$arn" --version-number "$3" --query 'Content.Location' --output text | xargs curl "$xargsOpts" "$1:$3.zip" && unzip "$unzipOpts" "$1:$3.zip" -d "$1:$3" && stat -c "%y %n" "$1":"$3"/*/*/*/*/newrelic/agent*
     [[ $1 == @(*Extension*) ]] && lib-msg "an agent does not exist in the $1 layer"
     lib-error-check
   elif [[ $4 == extension ]]; then
-    aws --region "$2" lambda get-layer-version --layer-name "$arn" --version-number "$3" | jq -r .Content.Location | xargs curl "$xargsOpts" "$1:$3.zip" && unzip "$unzipOpts" "$1:$3.zip" -d "$1:$3" && stat -c "%y %n" "$1":"$3"/*/newrelic*
+    aws --region "$2" lambda get-layer-version --layer-name "$arn" --version-number "$3" --query 'Content.Location' --output text | xargs curl "$xargsOpts" "$1:$3.zip" && unzip "$unzipOpts" "$1:$3.zip" -d "$1:$3" && stat -c "%y %n" "$1":"$3"/*/newrelic*
     lib-error-check
   else
     lib-msg "------------------------------------------------------------"
     lib-msg "$arn:$3"
-    aws --region "$2" lambda get-layer-version --layer-name "$arn" --version-number "$3" | jq -r .Content.Location | xargs curl "$xargsOpts" "$1:$3.zip" && unzip "$unzipOpts" "$1:$3.zip" -d "$1:$3" && ls -l "$1:$3"
+    aws --region "$2" lambda get-layer-version --layer-name "$arn" --version-number "$3" --query 'Content.Location' --output text | xargs curl "$xargsOpts" "$1:$3.zip" && unzip "$unzipOpts" "$1:$3.zip" -d "$1:$3" && ls -l "$1:$3"
     lib-error-check
   fi
   RET="$?"
@@ -245,28 +237,42 @@ download-layers() {
 
 clusters() {
   lib-debug "$@"
-  aws eks list-clusters | jq -r '.clusters[] | .'
-  # aws eks list-clusters --output text
-  # eksctl get cluster -o json | jq -r '.[].metadata.name'
+  clusters=$(aws eks list-clusters --query 'clusters[]' --output text)
+  print_header=1
+
+  for cluster_name in $clusters; do
+    [[ $print_header -eq 1 ]] && echo "Cluster Name | Status | Node Group Name | Node Group Status | Min Size | Desired Size | Max Size"
+    cluster_status=$(aws eks describe-cluster --name "$cluster_name" --query "cluster.status" --output text)
+    node_groups=$(aws eks list-nodegroups --cluster-name "$cluster_name" --query 'nodegroups[]' --output text)
+    [[ -z $node_groups ]] && echo "$cluster_name | $cluster_status | | INACTIVE"
+
+    for node_group_name in $node_groups; do
+      node_group_info=$(aws eks describe-nodegroup --cluster-name "$cluster_name" --nodegroup-name "$node_group_name" --query 'nodegroup.{status:status, minSize:scalingConfig.minSize, desiredSize:scalingConfig.desiredSize, maxSize:scalingConfig.maxSize}' --output yaml)
+      node_group_status=$(echo "$node_group_info" | grep '^status' | awk '{print $2}')
+      min_size=$(echo "$node_group_info" | grep '^minSize' | awk '{print $2}')
+      desired_size=$(echo "$node_group_info" | grep '^desiredSize' | awk '{print $2}')
+      max_size=$(echo "$node_group_info" | grep '^maxSize' | awk '{print $2}')
+
+      echo "$cluster_name | $cluster_status | $node_group_name | $node_group_status | $min_size | $desired_size | $max_size"
+    done
+    print_header=0
+  done | column -t -s '|'
   RET="$?"
   lib-error-check
 }
 
 eks-status() {
   lib-debug "$@"
-  [[ -z $1 ]] && clusters "$@" && cs-unset 1
-  lib-echo "Status"
-  aws eks describe-cluster --name "$1" --query 'cluster.status' --output text
-  lib-msg "nodegroup capacity: $(eksctl get ng --cluster "$1" -o json | jq -r '.[].DesiredCapacity')"
+  [[ -z $1 ]] && clusters "$@" && return 0
+  eksctl get ng --cluster "$1" -o json
   RET="$?"
   lib-error-check
 }
 
 eks-start() {
   lib-debug "$@"
-  [[ -z $1 ]] && clusters "$@" && cs-unset 1
+  [[ -z $1 ]] && clusters "$@" && return 0
   [[ -z $2 ]] && cs-usage 1
-  lib-echo "Start (scale up)"
   eksctl scale ng "$(get-node-group "$1")" --cluster "$1" -N "$2"
   RET="$?"
   lib-error-check
@@ -274,8 +280,7 @@ eks-start() {
 
 eks-stop() {
   lib-debug "$@"
-  [[ -z $1 ]] && clusters "$@" && cs-unset 1
-  lib-echo "Stop (scale down)"
+  [[ -z $1 ]] && clusters "$@" && return 0
   eksctl scale ng "$(get-node-group "$1")" --cluster "$1" -N 0
   RET="$?"
   lib-error-check
@@ -283,32 +288,23 @@ eks-stop() {
 
 ids() {
   lib-debug "$@"
-  aws ec2 describe-instances | jq -r '
-  .Reservations[].Instances[]
-  | .InstanceId as $id
-  | .Tags[]?
-  | select(.Key=="Name")
-  | .Value as $value
-  | [$value, $id]
-  | @csv'
+  aws ec2 describe-instances --query 'sort_by(Reservations[].Instances[].[Tags[?Key==`Name`].Value|[0], InstanceId, State.Name], &@[2])' --output table
   RET="$?"
   lib-error-check
 }
 
 status() {
   lib-debug "$@"
-  [[ -z $1 ]] && ids "$@" && cs-unset 1
-  lib-echo "Status"
-  aws ec2 describe-instance-status --instance-ids "$1"
+  [[ -z $1 ]] && ids "$@" && return 0
+  aws ec2 describe-instance-status --instance-ids "$1" --output table
   RET="$?"
   lib-error-check
 }
 
 start() {
   lib-debug "$@"
-  [[ -z $1 ]] && ids && cs-unset 1
-  lib-echo "Start"
-  aws ec2 start-instances --instance-ids "$1"
+  [[ -z $1 ]] && ids "$@" && return 0
+  aws ec2 start-instances --instance-ids "$1" --output table
   RET="$?"
   lib-error-check
   update-ssh "$1"
@@ -318,40 +314,27 @@ start() {
 
 stop() {
   lib-debug "$@"
-  [[ -z $1 ]] && ids && cs-unset 1
-  lib-echo "Stop"
-  aws ec2 stop-instances --instance-ids "$1"
+  [[ -z $1 ]] && ids "$@" && return 0
+  aws ec2 stop-instances --instance-ids "$1" --output table
   RET="$?"
   lib-error-check
 }
 
 restart() {
   lib-debug "$@"
-  [[ -z $1 ]] && ids && cs-unset 1
-  lib-echo "Restart"
-  aws ec2 reboot-instances --instance-ids "$1"
+  [[ -z $1 ]] && ids "$@" && return 0
+  aws ec2 reboot-instances --instance-ids "$1" --output table
   RET="$?"
   lib-error-check
 }
 
 ssh() {
   lib-debug "$@"
-  [[ -z $1 ]] && ids && cs-unset 1
+  [[ -z $1 ]] && ids "$@" && return 0
   start "$1"
 }
 
 # --------------------------- CLI
-
-# unset functions to free up memmory
-cs-unset() {
-  unset -f cs-version cs-usage cs-thanks cs-lambda-go cs-eks-go cs-ec2-go
-  exit $1
-}
-
-cs-version() {
-  print-version "v0.9"
-  cs-unset
-}
 
 cs-usage() {
   echo "Usage: cs [OPTIONS] COMPONENT COMMAND [REQUIRED ARGS]... (OPTIONAL ARGS)..."
@@ -366,7 +349,7 @@ cs-usage() {
   echo "  lambda         List and download New Relic Lambda layers"
   echo
   echo "Commands and Args:"
-  echo "  ec2 start|stop|restart|status|ssh [instanceId]"
+  echo "  ec2 start|stop|restart|status|ssh (instanceId)"
   echo "  eks start [cluster] [number of nodes]"
   echo "  eks stop|status [cluster]"
   echo "  lambda list-layers (compatibleRuntime|all) (region)"
@@ -374,20 +357,27 @@ cs-usage() {
   cs-unset $1
 }
 
+# unset functions to free up memmory
+cs-unset() {
+  unset -f cs-version cs-usage cs-thanks cs-lambda-go cs-eks-go cs-ec2-go
+  exit $1
+}
+
+cs-version() {
+  print-version "$1"
+}
+
 # display message before exit
+# $1 -> version string
 cs-thanks() {
-  if lib-has figlet; then
-    figlet -f small "CloudScript"
-  else
-    lib-msg "CloudScript"
-  fi
+  echo
+  cs-version "$1"
   lib-msg "Made with <3 by Keegan Mullaney, a Senior Technical Support Engineer at New Relic."
   cs-unset 0
 }
 
 # $1: lambda
 # $2: operation
-# list-layers
 # $3: compatibleRuntime|layer|all (optional), if blank will get a list of compatible runtimes or layer names
 # $4: region (optional), if blank will use default region
 # $5: build#|latest (optional), if blank will get latest layers
@@ -467,7 +457,7 @@ userCommand=("$@")
 for c in ${userCommand[0]}; do
   [[ $CS_DEBUG == 1 ]] && echo "$c"
   if [[ $c == "-v" ]] || [[ $c == "--version" ]]; then
-    cs-version "$c"
+    cs-version $VERSION
   elif [[ $c == "--help" ]]; then
     cs-usage 0
   elif [[ $c == "lambda" ]]; then
@@ -481,4 +471,4 @@ for c in ${userCommand[0]}; do
   fi
 done
 
-cs-thanks
+cs-thanks $VERSION
