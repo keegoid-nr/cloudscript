@@ -85,7 +85,7 @@ get-node-group() {
 }
 
 get-public-dns() {
-  aws ec2 describe-instances --instance-ids "$1" --query 'Reservations[*].Instances[*].PublicDnsName' --output text
+  aws ec2 describe-instances --instance-ids "$1" --query 'Reservations[*].Instances[*].PublicDnsName' --output text --no-paginate
   RET="$?"
 }
 
@@ -154,18 +154,18 @@ get-layer() {
   fi
 
   if [[ $4 == agent ]]; then
-    [[ $1 == @(*Java*) ]] && aws --region "$2" lambda get-layer-version --layer-name "$arn" --version-number "$3" --query 'Content.Location' --output text | xargs curl "$xargsOpts" "$1:$3.zip" && unzip "$unzipOpts" "$1:$3.zip" -d "$1:$3" && stat -c "%y %n" "$1":"$3"/*/*/NewRelic*
-    [[ $1 == @(*NodeJS*) ]] && aws --region "$2" lambda get-layer-version --layer-name "$arn" --version-number "$3" --query 'Content.Location' --output text | xargs curl "$xargsOpts" "$1:$3.zip" && unzip "$unzipOpts" "$1:$3.zip" -d "$1:$3" && stat -c "%y %n" "$1":"$3"/*/*/newrelic/newrelic*
-    [[ $1 == @(*Python*) ]] && aws --region "$2" lambda get-layer-version --layer-name "$arn" --version-number "$3" --query 'Content.Location' --output text | xargs curl "$xargsOpts" "$1:$3.zip" && unzip "$unzipOpts" "$1:$3.zip" -d "$1:$3" && stat -c "%y %n" "$1":"$3"/*/*/*/*/newrelic/agent*
+    [[ $1 == @(*Java*) ]] && aws --region "$2" lambda get-layer-version --layer-name "$arn" --version-number "$3" --query 'Content.Location' --output text --no-paginate | xargs curl "$xargsOpts" "$1:$3.zip" && unzip "$unzipOpts" "$1:$3.zip" -d "$1:$3" && stat -c "%y %n" "$1":"$3"/*/*/NewRelic*
+    [[ $1 == @(*NodeJS*) ]] && aws --region "$2" lambda get-layer-version --layer-name "$arn" --version-number "$3" --query 'Content.Location' --output text --no-paginate | xargs curl "$xargsOpts" "$1:$3.zip" && unzip "$unzipOpts" "$1:$3.zip" -d "$1:$3" && stat -c "%y %n" "$1":"$3"/*/*/newrelic/newrelic*
+    [[ $1 == @(*Python*) ]] && aws --region "$2" lambda get-layer-version --layer-name "$arn" --version-number "$3" --query 'Content.Location' --output text --no-paginate | xargs curl "$xargsOpts" "$1:$3.zip" && unzip "$unzipOpts" "$1:$3.zip" -d "$1:$3" && stat -c "%y %n" "$1":"$3"/*/*/*/*/newrelic/agent*
     [[ $1 == @(*Extension*) ]] && lib-msg "an agent does not exist in the $1 layer"
     lib-error-check
   elif [[ $4 == extension ]]; then
-    aws --region "$2" lambda get-layer-version --layer-name "$arn" --version-number "$3" --query 'Content.Location' --output text | xargs curl "$xargsOpts" "$1:$3.zip" && unzip "$unzipOpts" "$1:$3.zip" -d "$1:$3" && stat -c "%y %n" "$1":"$3"/*/newrelic*
+    aws --region "$2" lambda get-layer-version --layer-name "$arn" --version-number "$3" --query 'Content.Location' --output text --no-paginate | xargs curl "$xargsOpts" "$1:$3.zip" && unzip "$unzipOpts" "$1:$3.zip" -d "$1:$3" && stat -c "%y %n" "$1":"$3"/*/newrelic*
     lib-error-check
   else
     lib-msg "------------------------------------------------------------"
     lib-msg "$arn:$3"
-    aws --region "$2" lambda get-layer-version --layer-name "$arn" --version-number "$3" --query 'Content.Location' --output text | xargs curl "$xargsOpts" "$1:$3.zip" && unzip "$unzipOpts" "$1:$3.zip" -d "$1:$3" && ls -l "$1:$3"
+    aws --region "$2" lambda get-layer-version --layer-name "$arn" --version-number "$3" --query 'Content.Location' --output text --no-paginate | xargs curl "$xargsOpts" "$1:$3.zip" && unzip "$unzipOpts" "$1:$3.zip" -d "$1:$3" && ls -l "$1:$3"
     lib-error-check
   fi
   RET="$?"
@@ -237,23 +237,27 @@ download-layers() {
 
 clusters() {
   lib-debug "$@"
-  clusters=$(aws eks list-clusters --query 'clusters[]' --output text)
+  clusters=$(aws eks list-clusters --query 'clusters[]' --output text --no-paginate)
   print_header=1
 
   for cluster_name in $clusters; do
-    [[ $print_header -eq 1 ]] && echo "Cluster Name | Status | Node Group Name | Node Group Status | Min Size | Desired Size | Max Size"
-    cluster_status=$(aws eks describe-cluster --name "$cluster_name" --query "cluster.status" --output text)
-    node_groups=$(aws eks list-nodegroups --cluster-name "$cluster_name" --query 'nodegroups[]' --output text)
+    [[ $print_header -eq 1 ]] && echo "Cluster Name | Status | Node Group Name | Node Group Status | Min Size | Max Size | Desired Size | Node Group Type | Instance Type | K8s Version"
+    cluster_status=$(eksctl get cluster --name "$cluster_name" --output json | jq -r '.[0].Status')
+    node_groups=$(eksctl get nodegroup --cluster "$cluster_name" --output json | jq -r 'map(.Name)[]')
     [[ -z $node_groups ]] && echo "$cluster_name | $cluster_status | | INACTIVE"
 
     for node_group_name in $node_groups; do
-      node_group_info=$(aws eks describe-nodegroup --cluster-name "$cluster_name" --nodegroup-name "$node_group_name" --query 'nodegroup.{status:status, minSize:scalingConfig.minSize, desiredSize:scalingConfig.desiredSize, maxSize:scalingConfig.maxSize}' --output yaml)
-      node_group_status=$(echo "$node_group_info" | grep '^status' | awk '{print $2}')
-      min_size=$(echo "$node_group_info" | grep '^minSize' | awk '{print $2}')
-      desired_size=$(echo "$node_group_info" | grep '^desiredSize' | awk '{print $2}')
-      max_size=$(echo "$node_group_info" | grep '^maxSize' | awk '{print $2}')
+      node_group_info=$(eksctl get nodegroup --cluster "$cluster_name" --name "$node_group_name" --output=json | jq '{status: .[0].Status, minSize: .[0].MinSize, maxSize: .[0].MaxSize, desiredSize: .[0].DesiredCapacity, type: .[0].Type, instanceType: .[0].InstanceType, version: .[0].Version}')
+      node_group_status=$(echo "$node_group_info" | jq -r '.status')
+      min_size=$(echo "$node_group_info" | jq -r '.minSize')
+      max_size=$(echo "$node_group_info" | jq -r '.maxSize')
+      desired_size=$(echo "$node_group_info" | jq -r '.desiredSize')
+      type=$(echo "$node_group_info" | jq -r '.type')
+      instanceType=$(echo "$node_group_info" | jq -r '.instanceType')
+      version=$(echo "$node_group_info" | jq -r '.version')
 
-      echo "$cluster_name | $cluster_status | $node_group_name | $node_group_status | $min_size | $desired_size | $max_size"
+      [[ $CS_DEBUG == 1 ]] && echo "$node_group_info"
+      echo "$cluster_name | $cluster_status | $node_group_name | $node_group_status | $min_size | $max_size | $desired_size | $type | $instanceType | $version"
     done
     print_header=0
   done | column -t -s '|'
@@ -288,7 +292,7 @@ eks-stop() {
 
 ids() {
   lib-debug "$@"
-  aws ec2 describe-instances --query 'sort_by(Reservations[].Instances[].[Tags[?Key==`Name`].Value|[0], InstanceId, State.Name], &@[2])' --output table
+  aws ec2 describe-instances --query 'sort_by(Reservations[].Instances[].[Tags[?Key==`Name`].Value|[0], InstanceId, State.Name], &@[2])' --output table --no-paginate
   RET="$?"
   lib-error-check
 }
@@ -296,7 +300,7 @@ ids() {
 status() {
   lib-debug "$@"
   [[ -z $1 ]] && ids "$@" && return 0
-  aws ec2 describe-instance-status --instance-ids "$1" --output table
+  aws ec2 describe-instance-status --instance-ids "$1" --output table --no-paginate
   RET="$?"
   lib-error-check
 }
@@ -304,7 +308,7 @@ status() {
 start() {
   lib-debug "$@"
   [[ -z $1 ]] && ids "$@" && return 0
-  aws ec2 start-instances --instance-ids "$1" --output table
+  aws ec2 start-instances --instance-ids "$1" --output table --no-paginate
   RET="$?"
   lib-error-check
   update-ssh "$1"
@@ -315,7 +319,7 @@ start() {
 stop() {
   lib-debug "$@"
   [[ -z $1 ]] && ids "$@" && return 0
-  aws ec2 stop-instances --instance-ids "$1" --output table
+  aws ec2 stop-instances --instance-ids "$1" --output table --no-paginate
   RET="$?"
   lib-error-check
 }
@@ -323,7 +327,7 @@ stop() {
 restart() {
   lib-debug "$@"
   [[ -z $1 ]] && ids "$@" && return 0
-  aws ec2 reboot-instances --instance-ids "$1" --output table
+  aws ec2 reboot-instances --instance-ids "$1" --output table --no-paginate
   RET="$?"
   lib-error-check
 }
