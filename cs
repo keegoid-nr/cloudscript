@@ -21,6 +21,15 @@ fi
 
 # --------------------------  LIBRARIES
 
+is_number() {
+    input="$1"
+
+    case $input in
+        ''|*[!0-9]*) return 1 ;; # false, input is not a number (integer)
+        *) return 0 ;;           # true, input is a number (integer)
+    esac
+}
+
 lib-has() {
   type "$1" >/dev/null 2>&1
 }
@@ -55,7 +64,7 @@ lib-debug() {
 
 [[ -z $CS_DEBUG ]] && CS_DEBUG=0
 SSH_CONFIG="$HOME/.ssh/config"
-VERSION="v1.0"
+VERSION="v1.2"
 
 # --------------------------- HELPER FUNCTIONS
 
@@ -141,9 +150,17 @@ get-latest-build() {
 
 get-layer() {
   local arn
+  local build
   local xargsOpts
   local unzipOpts
   arn="arn:aws:lambda:$2:451483290750:layer:$1"
+  build="$3"
+
+  if ! is_number "$build"; then
+    lib-msg "expected: (build#), received: ($build)"
+    echo
+    cs-usage 1
+  fi
 
   if [[ $CS_DEBUG -eq 1 ]]; then
     xargsOpts="-o"
@@ -190,6 +207,7 @@ list-layers() {
   else
     curl -fsSL "https://$region.layers.newrelic-external.com/get-layers?CompatibleRuntime=$compatibleRuntime" | jq .
   fi
+  RET="$?"
   lib-error-check
 }
 
