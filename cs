@@ -64,7 +64,7 @@ lib-debug() {
 
 [[ -z $CS_DEBUG ]] && CS_DEBUG=0
 SSH_CONFIG="$HOME/.ssh/config"
-VERSION="v1.2"
+VERSION="v1.3"
 
 # --------------------------- HELPER FUNCTIONS
 
@@ -253,16 +253,26 @@ download-layers() {
   lib-error-check
 }
 
+# table printing function
+print_table() {
+  input="$1"
+  echo -e "$input" | column -t -s '|'
+}
+
+print_row() {
+  printf "%-40s %-9s %-19s %-19s %-9s %-9s %-13s %-16s %-14s %-12s\n" "$@"
+}
+
 clusters() {
   lib-debug "$@"
   clusters=$(aws eks list-clusters --query 'clusters[]' --output text --no-paginate)
-  print_header=1
+
+  print_row "Cluster Name" "Status" "Node Group Name" "Node Group Status" "Min Size" "Max Size" "Desired Size" "Node Group Type" "Instance Type" "K8s Version"
 
   for cluster_name in $clusters; do
-    [[ $print_header -eq 1 ]] && echo "Cluster Name | Status | Node Group Name | Node Group Status | Min Size | Max Size | Desired Size | Node Group Type | Instance Type | K8s Version"
     cluster_status=$(eksctl get cluster --name "$cluster_name" --output json | jq -r '.[0].Status')
     node_groups=$(eksctl get nodegroup --cluster "$cluster_name" --output json | jq -r 'map(.Name)[]')
-    [[ -z $node_groups ]] && echo "$cluster_name | $cluster_status | | INACTIVE"
+    [[ -z $node_groups ]] && print_row "$cluster_name" "$cluster_status" "" "INACTIVE" "" "" "" "" "" ""
 
     for node_group_name in $node_groups; do
       node_group_info=$(eksctl get nodegroup --cluster "$cluster_name" --name "$node_group_name" --output=json | jq '{status: .[0].Status, minSize: .[0].MinSize, maxSize: .[0].MaxSize, desiredSize: .[0].DesiredCapacity, type: .[0].Type, instanceType: .[0].InstanceType, version: .[0].Version}')
@@ -275,10 +285,9 @@ clusters() {
       version=$(echo "$node_group_info" | jq -r '.version')
 
       [[ $CS_DEBUG == 1 ]] && echo "$node_group_info"
-      echo "$cluster_name | $cluster_status | $node_group_name | $node_group_status | $min_size | $max_size | $desired_size | $type | $instanceType | $version"
+      print_row "$cluster_name" "$cluster_status" "$node_group_name" "$node_group_status" "$min_size" "$max_size" "$desired_size" "$type" "$instanceType" "$version"
     done
-    print_header=0
-  done | column -t -s '|'
+  done
   RET="$?"
   lib-error-check
 }
@@ -286,7 +295,9 @@ clusters() {
 eks-status() {
   lib-debug "$@"
   [[ -z $1 ]] && clusters "$@" && return 0
-  eksctl get ng --cluster "$1" -o json
+  output=$(eksctl get ng --cluster "$1" -o json | jq -r '.[] | "\(.Name) | \(.Status) | \(.MinSize) | \(.MaxSize) | \(.DesiredCapacity) | \(.Type) | \(.InstanceType) | \(.Version)"')
+  header="Node Group Name | Node Group Status | Min Size | Max Size | Desired Size | Node Group Type | Instance Type | K8s Version"
+  print_table "$header\n$output"
   RET="$?"
   lib-error-check
 }
@@ -310,7 +321,9 @@ eks-stop() {
 
 ids() {
   lib-debug "$@"
-  aws ec2 describe-instances --query 'sort_by(Reservations[].Instances[].[Tags[?Key==`Name`].Value|[0], InstanceId, State.Name], &@[2])' --output table --no-paginate
+  output=$(aws ec2 describe-instances --query 'Reservations[].Instances[].[InstanceId, Tags[?Key==`Name`].Value|[0], State.Name]' --output text --no-paginate | awk -F'\t' '{print $1 " | " $2 " | " $3}')
+  header="Instance ID | Name | State"
+  print_table "$header\n$output"
   RET="$?"
   lib-error-check
 }
@@ -318,7 +331,9 @@ ids() {
 status() {
   lib-debug "$@"
   [[ -z $1 ]] && ids "$@" && return 0
-  aws ec2 describe-instance-status --instance-ids "$1" --output table --no-paginate
+  output=$(aws ec2 describe-instance-status --instance-ids "$1" --output json | jq -r '.InstanceStatuses[] | "\(.InstanceId) | \(.InstanceState.Name) | \(.InstanceStatus.Status) | \(.SystemStatus.Status)"')
+  header="Instance ID | Instance State | Instance Status | System Status"
+  print_table "$header\n$output"
   RET="$?"
   lib-error-check
 }
@@ -326,7 +341,7 @@ status() {
 start() {
   lib-debug "$@"
   [[ -z $1 ]] && ids "$@" && return 0
-  aws ec2 start-instances --instance-ids "$1" --output table --no-paginate
+  aws ec2 start-instances --instance-ids "$1" --output text --no-paginate
   RET="$?"
   lib-error-check
   update-ssh "$1"
@@ -337,7 +352,7 @@ start() {
 stop() {
   lib-debug "$@"
   [[ -z $1 ]] && ids "$@" && return 0
-  aws ec2 stop-instances --instance-ids "$1" --output table --no-paginate
+  aws ec2 stop-instances --instance-ids "$1" --output text --no-paginate
   RET="$?"
   lib-error-check
 }
@@ -345,7 +360,7 @@ stop() {
 restart() {
   lib-debug "$@"
   [[ -z $1 ]] && ids "$@" && return 0
-  aws ec2 reboot-instances --instance-ids "$1" --output table --no-paginate
+  aws ec2 reboot-instances --instance-ids "$1" --output text --no-paginate
   RET="$?"
   lib-error-check
 }
