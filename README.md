@@ -6,6 +6,7 @@
 
 - [Requirements](#requirements)
 - [Usage](#usage)
+  - [EC2](#ec2)
   - [EKS](#eks)
   - [Lambda](#lambda)
 
