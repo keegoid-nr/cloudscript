@@ -321,7 +321,7 @@ eks-stop() {
 
 ids() {
   lib-debug "$@"
-  output=$(aws ec2 describe-instances --query 'Reservations[].Instances[].[InstanceId, Tags[?Key==`Name`].Value|[0], State.Name]' --output text --no-paginate | awk -F'\t' '{print $1 " | " $2 " | " $3}')
+  output=$(aws ec2 describe-instances --query 'Reservations[].Instances[].[InstanceId, Tags[?Key==`Name`].Value|[0], State.Name]' --output json --no-paginate | jq -r 'sort_by(.[1])[] | "\(.[0]) | \(.[1]) | \(.[2])"')
   header="Instance ID | Name | State"
   print_table "$header\n$output"
   RET="$?"
