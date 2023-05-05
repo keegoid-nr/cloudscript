@@ -30,23 +30,38 @@ unzip, xargs, and curl must also be available.
 ## Usage
 
 ```log
-Usage: cs [OPTIONS] COMPONENT COMMAND [REQUIRED ARGS]... (OPTIONAL ARGS)...
+Usage: cs COMPONENT [REQUIRED ARGS]... (OPTIONAL ARGS)...
 
-Options:
-  -v, --version  Show version
-  --help         Show this message and exit.
+About:
+  cs -v, --version  Show version
+  cs --help         Show this message
 
 Components:
-  ec2            Manage EC2 instance states
-  eks            Manage EKS node states
-  lambda         List and download New Relic Lambda layers
+  ec2     Manage EC2 instance states
+  eks     Manage EKS node states
+  lambda  List and download New Relic Lambda layers
 
-Commands and Args:
-  ec2 start|stop|restart|status|ssh [instanceId]
-  eks start [cluster] [number of nodes]
-  eks stop|status [cluster]
-  lambda list-layers (compatibleRuntime|all) (region)
-  lambda download-layers (layer|all) (region) (build#|latest) (extension|agent)
+Components and Args:
+  ec2 status
+  ec2 start|stop|restart|ssh [<instanceId>]
+  eks status
+  eks start [<cluster>] [<number of nodes>]
+  eks stop [<cluster>]
+  lambda list-layers (<runtime>|all) (<region>)
+  lambda download-layers (<layer>|all) (<region>) (<build>|latest) (extension|agent)
+
+Examples:
+  cs ec2 status
+  cs eks start my-cluster 2
+  cs lambda list-layers                                     List layer names
+  cs lambda list-layers all                                 Details for all layers
+  cs lambda list-layers nodejs18.x us-west-2                Details for a specific layer
+  cs lambda download-layers NewRelicNodeJS18X us-west-2 24  Download build #24 for a layer
+  cs lambda download-layers all us-west-2 latest extension  Download all latest layers & show extension details
+
+Notes:
+  <replace> with your values
+  <replace>|arg means use either your value or arg, not both
 ```
 
 1. Copy `cs` to your PATH.
