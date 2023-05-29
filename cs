@@ -64,7 +64,7 @@ lib-debug() {
 
 [[ -z $CS_DEBUG ]] && CS_DEBUG=0
 SSH_CONFIG="$HOME/.ssh/config"
-VERSION="v1.4"
+VERSION="v1.5"
 
 # --------------------------- HELPER FUNCTIONS
 
@@ -82,6 +82,15 @@ checks() {
   fi
   if ! aws sts get-caller-identity >/dev/null; then exit 1; fi
   RET="$?"
+}
+
+print_table() {
+  input="$1"
+  echo -e "$input" | column -t -s '|'
+}
+
+print_row() {
+  printf "%-40s %-9s %-19s %-19s %-9s %-9s %-13s %-16s %-14s %-12s\n" "$@"
 }
 
 print-version() {
@@ -172,8 +181,8 @@ get-layer() {
 
   if [[ $4 == agent ]]; then
     [[ $1 == @(*Java*) ]] && aws --region "$2" lambda get-layer-version --layer-name "$arn" --version-number "$3" --query 'Content.Location' --output text --no-paginate | xargs curl "$xargsOpts" "$1:$3.zip" && unzip "$unzipOpts" "$1:$3.zip" -d "$1:$3" && stat -c "%y %n" "$1":"$3"/*/*/NewRelic*
-    [[ $1 == @(*NodeJS*) ]] && aws --region "$2" lambda get-layer-version --layer-name "$arn" --version-number "$3" --query 'Content.Location' --output text --no-paginate | xargs curl "$xargsOpts" "$1:$3.zip" && unzip "$unzipOpts" "$1:$3.zip" -d "$1:$3" && stat -c "%y %n" "$1":"$3"/*/*/newrelic/newrelic*
-    [[ $1 == @(*Python*) ]] && aws --region "$2" lambda get-layer-version --layer-name "$arn" --version-number "$3" --query 'Content.Location' --output text --no-paginate | xargs curl "$xargsOpts" "$1:$3.zip" && unzip "$unzipOpts" "$1:$3.zip" -d "$1:$3" && stat -c "%y %n" "$1":"$3"/*/*/*/*/newrelic/agent*
+    [[ $1 == @(*NodeJS*) ]] && aws --region "$2" lambda get-layer-version --layer-name "$arn" --version-number "$3" --query 'Content.Location' --output text --no-paginate | xargs curl "$xargsOpts" "$1:$3.zip" && unzip "$unzipOpts" "$1:$3.zip" -d "$1:$3" && stat -c "%y %n" "$1":"$3"/*/*/newrelic/newrelic* &&  grep 'newrelic/-' "$1":"$3"/nodejs/package-lock.json | uniq
+    [[ $1 == @(*Python*) ]] && aws --region "$2" lambda get-layer-version --layer-name "$arn" --version-number "$3" --query 'Content.Location' --output text --no-paginate | xargs curl "$xargsOpts" "$1:$3.zip" && unzip "$unzipOpts" "$1:$3.zip" -d "$1:$3" && stat -c "%y %n" "$1":"$3"/*/*/*/*/newrelic/agent* && cat "$1":"$3"/python/lib/python3.9/site-packages/newrelic/version.txt && echo
     [[ $1 == @(*Extension*) ]] && lib-msg "an agent does not exist in the $1 layer"
     lib-error-check
   elif [[ $4 == extension ]]; then
@@ -188,7 +197,7 @@ get-layer() {
   RET="$?"
 }
 
-# --------------------------- FUNCTIONS
+# --------------------------- LAMBDA FUNCTIONS
 
 list-layers() {
   lib-debug "$@"
@@ -253,15 +262,7 @@ download-layers() {
   lib-error-check
 }
 
-# table printing function
-print_table() {
-  input="$1"
-  echo -e "$input" | column -t -s '|'
-}
-
-print_row() {
-  printf "%-40s %-9s %-19s %-19s %-9s %-9s %-13s %-16s %-14s %-12s\n" "$@"
-}
+# --------------------------- EKS FUNCTIONS
 
 clusters() {
   lib-debug "$@"
@@ -318,6 +319,8 @@ eks-stop() {
   RET="$?"
   lib-error-check
 }
+
+# --------------------------- EC2 FUNCTIONS
 
 ids() {
   lib-debug "$@"
