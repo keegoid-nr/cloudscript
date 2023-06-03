@@ -9,6 +9,7 @@
   - [EC2](#ec2)
   - [EKS](#eks)
   - [Lambda](#lambda)
+- [Contributing](#contributing)
 
 <!-- END doctoc generated TOC please keep comment here to allow auto update -->
 
@@ -163,3 +164,7 @@ cs lambda download-layers NewRelicPython39 us-west-2 36
 - If leaving off the optional extension or agent, details for both will be displayed.
 
 *Tested on Ubuntu 22.04 with Bash version 5.1.16*
+
+## Contributing
+
+See [CONTRIBUTING.md](./CONTRIBUTING.md)
