@@ -64,7 +64,7 @@ lib-debug() {
 
 [[ -z $CS_DEBUG ]] && CS_DEBUG=0
 SSH_CONFIG="$HOME/.ssh/config"
-VERSION="v1.5"
+VERSION="v1.6"
 
 # --------------------------- HELPER FUNCTIONS
 
