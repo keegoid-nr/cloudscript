@@ -162,8 +162,12 @@ get-layer() {
   local build
   local xargsOpts
   local unzipOpts
+  local pythonRuntime
+  local v
   arn="arn:aws:lambda:$2:451483290750:layer:$1"
   build="$3"
+  pythonRuntime=${1: -2}
+  v="${pythonRuntime:0:1}.${pythonRuntime:1}"
 
   if ! is_number "$build"; then
     lib-msg "expected: (build#), received: ($build)"
@@ -182,7 +186,7 @@ get-layer() {
   if [[ $4 == agent ]]; then
     [[ $1 == @(*Java*) ]] && aws --region "$2" lambda get-layer-version --layer-name "$arn" --version-number "$3" --query 'Content.Location' --output text --no-paginate | xargs curl "$xargsOpts" "$1:$3.zip" && unzip "$unzipOpts" "$1:$3.zip" -d "$1:$3" && stat -c "%y %n" "$1":"$3"/*/*/NewRelic*
     [[ $1 == @(*NodeJS*) ]] && aws --region "$2" lambda get-layer-version --layer-name "$arn" --version-number "$3" --query 'Content.Location' --output text --no-paginate | xargs curl "$xargsOpts" "$1:$3.zip" && unzip "$unzipOpts" "$1:$3.zip" -d "$1:$3" && stat -c "%y %n" "$1":"$3"/*/*/newrelic/newrelic* &&  grep 'newrelic/-' "$1":"$3"/nodejs/package-lock.json | uniq
-    [[ $1 == @(*Python*) ]] && aws --region "$2" lambda get-layer-version --layer-name "$arn" --version-number "$3" --query 'Content.Location' --output text --no-paginate | xargs curl "$xargsOpts" "$1:$3.zip" && unzip "$unzipOpts" "$1:$3.zip" -d "$1:$3" && stat -c "%y %n" "$1":"$3"/*/*/*/*/newrelic/agent* && cat "$1":"$3"/python/lib/python3.9/site-packages/newrelic/version.txt && echo
+    [[ $1 == @(*Python*) ]] && aws --region "$2" lambda get-layer-version --layer-name "$arn" --version-number "$3" --query 'Content.Location' --output text --no-paginate | xargs curl "$xargsOpts" "$1:$3.zip" && unzip "$unzipOpts" "$1:$3.zip" -d "$1:$3" && stat -c "%y %n" "$1":"$3"/*/*/*/*/newrelic/agent* && cat "$1":"$3"/python/lib/python"$v"/site-packages/newrelic/version.txt && echo
     [[ $1 == @(*Extension*) ]] && lib-msg "an agent does not exist in the $1 layer"
     lib-error-check
   elif [[ $4 == extension ]]; then
