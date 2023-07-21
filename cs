@@ -16,21 +16,19 @@
 
 [[ -z $CS_DEBUG ]] && CS_DEBUG=0
 SSH_CONFIG="$HOME/.ssh/config"
-VERSION="v1.6"
-set -o errexit
+VERSION="v1.7"
+# set -o errexit
 # set -o nounset
-set -o pipefail
+# set -o pipefail
 
 # Determine the shell that the script is being run from
-if [ -n "$ZSH_VERSION" ]; then
+# if [[ "$SHELL" == "/bin/zsh" ]]; then
   # Zsh is running, set offset to 1
-  offset=1
-  emulate -LR zsh
-  zmodload zsh/stat
-else
+  # offset=1
+# else
   # Bash is running, set offset to 0
   offset=0
-fi
+# fi
 
 # --------------------------  LIBRARIES
 
@@ -258,32 +256,66 @@ eks-stop() {
 
 lambda-list-compatible-runtimes() {
   curl -fsSL "https://$1.layers.newrelic-external.com/get-layers" | jq -r '.Layers[].LatestMatchingVersion.CompatibleRuntimes[]' | sort | uniq
+  return 0
 }
 
 lambda-list-layer-names() {
   curl -fsSL "https://$1.layers.newrelic-external.com/get-layers" | jq -r '.Layers[].LayerName' | sort | uniq
+  return 0
 }
 
 lambda-get-latest-build() {
   curl -fsSL "https://$1.layers.newrelic-external.com/get-layers" | jq -r --arg LAYER "$2" '.Layers[] | select(.LayerName == $LAYER) | .LatestMatchingVersion.Version'
   RET="$?"
   [[ $RET -gt 0 ]] && lambda-list-layer-names "$1" && exit 0
+  return 0
+}
+
+lambda-get-layer-version() {
+  local arn
+  local region
+  local build
+  local xargsOpts
+  local unzipOpts
+  local path
+  local globPattern
+  arn="$1"
+  region="$2"
+  build="$3"
+  xargsOpts="$4"
+  unzipOpts="$5"
+  path="$6"
+  globPattern=( "$7" )
+
+  aws --region "$region" lambda get-layer-version --layer-name "$arn" --version-number "$build" --query 'Content.Location' --output text --no-paginate | xargs curl "$xargsOpts" "$path.zip" && unzip "$unzipOpts" "$path.zip" -d "$path"
+  if [[ -n "$globPattern" ]]; then
+    if [[ "$SHELL" == "/bin/zsh" ]]; then
+      stat -L -F "%y %n" $globPattern 2>/dev/null
+    else
+      stat -c "%y %n" $globPattern
+    fi
+  fi
+  return 0
 }
 
 lambda-get-layer() {
   local arn
+  local name
+  local region
   local build
   local xargsOpts
   local unzipOpts
   local pythonRuntime
   local v
   local path
-  local glob_pattern
-  arn="arn:aws:lambda:$2:451483290750:layer:$1"
+  local globPattern
+  name="$1"
+  region="$2"
+  arn="arn:aws:lambda:$region:451483290750:layer:$name"
   build="$3"
   pythonRuntime=${1: -2}
-  path="$1":"$3"
   v="${pythonRuntime:0:1}.${pythonRuntime:1}"
+  path="$1":"$3"
 
   if ! lib-is-number "$build"; then
     lib-msg "expected: (build#), received: ($build)"
@@ -300,29 +332,24 @@ lambda-get-layer() {
   fi
 
   if [[ $4 == agent ]]; then
-    if [[ $1 == @(*Java*) ]]; then
-      glob_pattern=( "$path/*/*/NewRelic*" )
-      aws --region "$2" lambda get-layer-version --layer-name "$arn" --version-number "$3" --query 'Content.Location' --output text --no-paginate | xargs curl "$xargsOpts" "$1:$3.zip" && unzip "$unzipOpts" "$1:$3.zip" -d "$1:$3" && if [[ -n "$ZSH_VERSION" ]]; then zstat -L -F "%Y-%m-%d %H:%M:%S %n" $glob_pattern; else stat -c "%y %n" $glob_pattern; fi
-    fi
-    if [[ $1 == @(*NodeJS*) ]]; then
-      glob_pattern=( "$path/*/*/newrelic/newrelic*" )
-      aws --region "$2" lambda get-layer-version --layer-name "$arn" --version-number "$3" --query 'Content.Location' --output text --no-paginate | xargs curl "$xargsOpts" "$1:$3.zip" && unzip "$unzipOpts" "$1:$3.zip" -d "$1:$3" && if [[ -n "$ZSH_VERSION" ]]; then zstat -L -F "%Y-%m-%d %H:%M:%S %n" $glob_pattern; else stat -c "%y %n" $glob_pattern; fi &&  grep 'newrelic/-' "$1":"$3"/nodejs/package-lock.json | uniq
-    fi
-    if [[ $1 == @(*Python*) ]]; then
-      glob_pattern=( "$path/*/*/*/*/newrelic/agent*" )
-      aws --region "$2" lambda get-layer-version --layer-name "$arn" --version-number "$3" --query 'Content.Location' --output text --no-paginate | xargs curl "$xargsOpts" "$1:$3.zip" && unzip "$unzipOpts" "$1:$3.zip" -d "$1:$3" && if [[ -n "$ZSH_VERSION" ]]; then zstat -L -F "%Y-%m-%d %H:%M:%S %n" $glob_pattern; else stat -c "%y %n" $glob_pattern; fi && cat "$1":"$3"/python/lib/python"$v"/site-packages/newrelic/version.txt && echo
-    fi
-    [[ $1 == @(*Extension*) ]] && lib-msg "an agent does not exist in the $1 layer"
+    [[ $1 == *Java* ]] && globPattern="$path/*/*/NewRelic*"
+    [[ $1 == *NodeJS* ]] && globPattern="$path/*/*/newrelic/newrelic*"
+    [[ $1 == *Python* ]] && globPattern="$path/*/*/*/*/newrelic/agent*"
+    lambda-get-layer-version "$arn" "$region" "$build" "$xargsOpts" "$unzipOpts" "$path" "$globPattern"
+    [[ $1 == *NodeJS* ]] && grep 'newrelic/-' "$path/nodejs/package-lock.json" | uniq
+    [[ $1 == *Python* ]] && cat "$path/python/lib/python$v/site-packages/newrelic/version.txt"
+    [[ $1 == *Extension* ]] && lib-msg "an agent does not exist in the $1 layer"
   elif [[ $4 == extension ]]; then
-    glob_pattern=( "$path/*/newrelic*" )
-    aws --region "$2" lambda get-layer-version --layer-name "$arn" --version-number "$3" --query 'Content.Location' --output text --no-paginate | xargs curl "$xargsOpts" "$1:$3.zip" && unzip "$unzipOpts" "$1:$3.zip" -d "$1:$3" && if [[ -n "$ZSH_VERSION" ]]; then zstat -L -F "%Y-%m-%d %H:%M:%S %n" $glob_pattern; else stat -c "%y %n" $glob_pattern; fi
+    globPattern="$path/*/newrelic*"
+    lambda-get-layer-version "$arn" "$region" "$build" "$xargsOpts" "$unzipOpts" "$path" "$globPattern"
     lib-error-check "$?" "get-layer extension"
   else
     lib-msg "------------------------------------------------------------"
     lib-msg "$arn:$3"
-    aws --region "$2" lambda get-layer-version --layer-name "$arn" --version-number "$3" --query 'Content.Location' --output text --no-paginate | xargs curl "$xargsOpts" "$1:$3.zip" && unzip "$unzipOpts" "$1:$3.zip" -d "$1:$3" && ls -l "$1:$3"
+    lambda-get-layer-version "$arn" "$region" "$build" "$xargsOpts" "$unzipOpts" "$path"
     lib-error-check "$?" "lambda-get-layer"
   fi
+  return 0
 }
 
 lambda-list-layers() {
@@ -382,6 +409,7 @@ lambda-download-layers() {
       lambda-get-layer "$layer" "$region" "$build" "$glob"
     fi
   fi
+  return 0
 }
 
 # --------------------------- CLI
