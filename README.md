@@ -31,7 +31,7 @@ unzip, xargs, and curl must also be available.
 ## Usage
 
 ```log
-Usage: cs COMPONENT [REQUIRED ARGS]... (OPTIONAL ARGS)...
+Usage: cs COMPONENT <REQUIRED ARGS> [OPTIONAL ARGS]
 
 About:
   cs -v, --version  Show version
@@ -44,12 +44,12 @@ Components:
 
 Components and Args:
   ec2 status
-  ec2 start|stop|restart|ssh [<instanceId>]
+  ec2 start|stop|restart|ssh <instanceId>
   eks status
-  eks start [<cluster>] [<number of nodes>]
-  eks stop [<cluster>]
-  lambda list-layers (<runtime>|all) (<region>)
-  lambda download-layers (<layer>|all) (<region>) (<build>|latest) (extension|agent)
+  eks start <cluster> <number of nodes>
+  eks stop <cluster>
+  lambda list-layers [runtime]|[all] [region]
+  lambda download-layers [layer]|[all] [region] [build]|[latest] [extension]|[agent]
 
 Examples:
   cs ec2 status
@@ -59,10 +59,6 @@ Examples:
   cs lambda list-layers nodejs18.x us-west-2                Details for a specific layer
   cs lambda download-layers NewRelicNodeJS18X us-west-2 24  Download build #24 for a layer
   cs lambda download-layers all us-west-2 latest extension  Download all latest layers & show extension details
-
-Notes:
-  <replace> with your values
-  <replace>|arg means use either your value or arg, not both
 ```
 
 1. Copy `cs` to your PATH.
