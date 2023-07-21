@@ -13,7 +13,7 @@
 # -----------------------------------------------------
 
 set -o errexit
-set -o nounset
+# set -o nounset
 set -o pipefail
 
 # Determine the shell that the script is being run from
@@ -34,7 +34,7 @@ VERSION="v1.5"
 
 # --------------------------  LIBRARIES
 
-is_number() {
+is-number() {
     input="$1"
 
     case $input in
@@ -58,17 +58,18 @@ lib-msg() {
 }
 
 # display error message
-# $1 -> string
+# $1 -> exit code
 # $2 -> string
 lib-error-check() {
-  local error_message="${1:-}"
-  local exit_code="${2:-1}"
-  if [ -n "$error_message" ]; then
-    lib-msg "An error occurred: $error_message"
-  else
-    lib_debug
+  local exit_code="${1:-0}"
+  local error_message="${2:-}"
+  if (( exit_code != 0 )); then
+    lib-debug
+    if [ -n "$error_message" ]; then
+      lib-msg "An error occurred: $error_message"
+    fi
+    exit "$exit_code"
   fi
-  exit "$exit_code"
 }
 
 # display debug info
@@ -158,17 +159,14 @@ EOF
   fi
   lib-msg "\nModified ~/.ssh/config:"
   cat ~/.ssh/config
-  RET="$?"
 }
 
 list-compatible-runtimes() {
   curl -fsSL "https://$1.layers.newrelic-external.com/get-layers" | jq -r '.Layers[].LatestMatchingVersion.CompatibleRuntimes[]' | sort | uniq
-  RET="$?"
 }
 
 list-layer-names() {
   curl -fsSL "https://$1.layers.newrelic-external.com/get-layers" | jq -r '.Layers[].LayerName' | sort | uniq
-  RET="$?"
 }
 
 get-latest-build() {
@@ -189,7 +187,7 @@ get-layer() {
   pythonRuntime=${1: -2}
   v="${pythonRuntime:0:1}.${pythonRuntime:1}"
 
-  if ! is_number "$build"; then
+  if ! is-number "$build"; then
     lib-msg "expected: (build#), received: ($build)"
     echo
     cs-usage 1
