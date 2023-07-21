@@ -1,11 +1,4 @@
 #!/usr/bin/env bash
-
-# Determine the shell that the script is being run from
-if [ -n "$ZSH_VERSION" ]; then
-  The script is being run from zsh
-  emulate -LR zsh
-fi
-
 # -----------------------------------------------------
 # CloudScript
 # Quickly do cloud stuff without leaving the terminal.
@@ -18,6 +11,26 @@ fi
 #
 # debug  : export CS_DEBUG=1
 # -----------------------------------------------------
+
+set -o errexit
+set -o nounset
+set -o pipefail
+
+# Determine the shell that the script is being run from
+if [ -n "$ZSH_VERSION" ]; then
+  # Zsh is running, set offset to 1
+  offset=1
+  emulate -LR zsh
+else
+  # Bash is running, set offset to 0
+  offset=0
+fi
+
+# --------------------------  SETUP PARAMETERS
+
+[[ -z $CS_DEBUG ]] && CS_DEBUG=0
+SSH_CONFIG="$HOME/.ssh/config"
+VERSION="v1.5"
 
 # --------------------------  LIBRARIES
 
@@ -48,16 +61,23 @@ lib-msg() {
 # $1 -> string
 # $2 -> string
 lib-error-check() {
-  if [[ $RET -gt 0 ]]; then
-    lib-msg "RET=$RET"
-    lib-msg "${FUNCNAME[1]}(${BASH_LINENO[0]}) - An error has occurred. ${1}${2}"
-    exit 1
+  local error_message="${1:-}"
+  local exit_code="${2:-1}"
+  if [ -n "$error_message" ]; then
+    lib-msg "An error occurred: $error_message"
+  else
+    lib_debug
   fi
+  exit "$exit_code"
 }
 
 # display debug info
 lib-debug() {
-  [[ $CS_DEBUG -eq 1 ]] && lib-msg "${FUNCNAME[1]}(${BASH_LINENO[0]}) - ARGS: $*"
+  if [ -n "$ZSH_VERSION" ]; then
+    lib-msg "${funcstack[$offset+1]}(${funcline[$offset]}) - ARGS: $*"
+  else
+    lib-msg "${FUNCNAME[$offset+1]}(${BASH_LINENO[$offset]}) - ARGS: $*"
+  fi
 }
 
 # --------------------------  SETUP PARAMETERS
@@ -204,7 +224,7 @@ get-layer() {
 # --------------------------- LAMBDA FUNCTIONS
 
 list-layers() {
-  lib-debug "$@"
+  [[ $CS_DEBUG -eq 1 ]] && lib-debug "$@"
   local compatibleRuntime
   local region
 
@@ -225,7 +245,7 @@ list-layers() {
 }
 
 download-layers() {
-  lib-debug "$@"
+  [[ $CS_DEBUG -eq 1 ]] && lib-debug "$@"
   local layer
   local region
   local build
@@ -248,7 +268,7 @@ download-layers() {
     for l in $(list-layer-names "$region"); do
       build=$(get-latest-build "$region" "$l")
       get-layer "$l" "$region" "$build" "$glob"
-      lib-debug "$@"
+      [[ $CS_DEBUG -eq 1 ]] && lib-debug "$@"
       lib-error-check "$l:$region:$build"
     done
   else
@@ -269,7 +289,7 @@ download-layers() {
 # --------------------------- EKS FUNCTIONS
 
 clusters() {
-  lib-debug "$@"
+  [[ $CS_DEBUG -eq 1 ]] && lib-debug "$@"
   clusters=$(aws eks list-clusters --query 'clusters[]' --output text --no-paginate)
 
   print_row "Cluster Name" "Status" "Node Group Name" "Node Group Status" "Min Size" "Max Size" "Desired Size" "Node Group Type" "Instance Type" "K8s Version"
@@ -298,7 +318,7 @@ clusters() {
 }
 
 eks-status() {
-  lib-debug "$@"
+  [[ $CS_DEBUG -eq 1 ]] && lib-debug "$@"
   [[ -z $1 ]] && clusters "$@" && return 0
   output=$(eksctl get ng --cluster "$1" -o json | jq -r '.[] | "\(.Name) | \(.Status) | \(.MinSize) | \(.MaxSize) | \(.DesiredCapacity) | \(.Type) | \(.InstanceType) | \(.Version)"')
   header="Node Group Name | Node Group Status | Min Size | Max Size | Desired Size | Node Group Type | Instance Type | K8s Version"
@@ -308,7 +328,7 @@ eks-status() {
 }
 
 eks-start() {
-  lib-debug "$@"
+  [[ $CS_DEBUG -eq 1 ]] && lib-debug "$@"
   [[ -z $1 ]] && clusters "$@" && return 0
   [[ -z $2 ]] && cs-usage 1
   eksctl scale ng "$(get-node-group "$1")" --cluster "$1" -N "$2"
@@ -317,7 +337,7 @@ eks-start() {
 }
 
 eks-stop() {
-  lib-debug "$@"
+  [[ $CS_DEBUG -eq 1 ]] && lib-debug "$@"
   [[ -z $1 ]] && clusters "$@" && return 0
   eksctl scale ng "$(get-node-group "$1")" --cluster "$1" -N 0
   RET="$?"
@@ -327,7 +347,7 @@ eks-stop() {
 # --------------------------- EC2 FUNCTIONS
 
 ids() {
-  lib-debug "$@"
+  [[ $CS_DEBUG -eq 1 ]] && lib-debug "$@"
   output=$(aws ec2 describe-instances --query 'Reservations[].Instances[].[InstanceId, Tags[?Key==`Name`].Value|[0], State.Name]' --output json --no-paginate | jq -r 'sort_by(.[1])[] | "\(.[0]) | \(.[1]) | \(.[2])"')
   header="Instance ID | Name | State"
   print_table "$header\n$output"
@@ -336,7 +356,7 @@ ids() {
 }
 
 status() {
-  lib-debug "$@"
+  [[ $CS_DEBUG -eq 1 ]] && lib-debug "$@"
   [[ -z $1 ]] && ids "$@" && return 0
   output=$(aws ec2 describe-instance-status --instance-ids "$1" --output json | jq -r '.InstanceStatuses[] | "\(.InstanceId) | \(.InstanceState.Name) | \(.InstanceStatus.Status) | \(.SystemStatus.Status)"')
   header="Instance ID | Instance State | Instance Status | System Status"
@@ -346,7 +366,7 @@ status() {
 }
 
 start() {
-  lib-debug "$@"
+  [[ $CS_DEBUG -eq 1 ]] && lib-debug "$@"
   [[ -z $1 ]] && ids "$@" && return 0
   aws ec2 start-instances --instance-ids "$1" --output text --no-paginate
   RET="$?"
@@ -357,7 +377,7 @@ start() {
 }
 
 stop() {
-  lib-debug "$@"
+  [[ $CS_DEBUG -eq 1 ]] && lib-debug "$@"
   [[ -z $1 ]] && ids "$@" && return 0
   aws ec2 stop-instances --instance-ids "$1" --output text --no-paginate
   RET="$?"
@@ -365,7 +385,7 @@ stop() {
 }
 
 restart() {
-  lib-debug "$@"
+  [[ $CS_DEBUG -eq 1 ]] && lib-debug "$@"
   [[ -z $1 ]] && ids "$@" && return 0
   aws ec2 reboot-instances --instance-ids "$1" --output text --no-paginate
   RET="$?"
@@ -373,7 +393,7 @@ restart() {
 }
 
 ssh() {
-  lib-debug "$@"
+  [[ $CS_DEBUG -eq 1 ]] && lib-debug "$@"
   [[ -z $1 ]] && ids "$@" && return 0
   start "$1"
 }
@@ -381,7 +401,7 @@ ssh() {
 # --------------------------- CLI
 
 cs-usage() {
-  echo "Usage: cs COMPONENT [REQUIRED ARGS]... (OPTIONAL ARGS)..."
+  echo "Usage: cs COMPONENT <REQUIRED ARGS> [OPTIONAL ARGS]"
   echo ""
   echo "About:"
   echo "  cs -v, --version  Show version"
@@ -394,12 +414,12 @@ cs-usage() {
   echo ""
   echo "Components and Args:"
   echo "  ec2 status"
-  echo "  ec2 start|stop|restart|ssh [<instanceId>]"
+  echo "  ec2 start|stop|restart|ssh <instanceId>"
   echo "  eks status"
-  echo "  eks start [<cluster>] [<number of nodes>]"
-  echo "  eks stop [<cluster>]"
-  echo "  lambda list-layers (<runtime>|all) (<region>)"
-  echo "  lambda download-layers (<layer>|all) (<region>) (<build>|latest) (extension|agent)"
+  echo "  eks start <cluster> <number of nodes>"
+  echo "  eks stop <cluster>"
+  echo "  lambda list-layers [runtime]|[all] [region]"
+  echo "  lambda download-layers [layer]|[all] [region] [build]|[latest] [extension]|[agent]"
   echo ""
   echo "Examples:"
   echo "  cs ec2 status"
@@ -409,10 +429,6 @@ cs-usage() {
   echo "  cs lambda list-layers nodejs18.x us-west-2                Details for a specific layer"
   echo "  cs lambda download-layers NewRelicNodeJS18X us-west-2 24  Download build #24 for a layer"
   echo "  cs lambda download-layers all us-west-2 latest extension  Download all latest layers & show extension details"
-  echo ""
-  echo "Notes:"
-  echo "  <replace> with your values"
-  echo "  <replace>|arg means use either your value or arg, not both"
   cs-unset $1
 }
 
@@ -511,9 +527,9 @@ cs-ec2-go() {
 # --------------------------  MAIN
 
 # capture input array
-userCommand=("$@")
+userCommand=("$@") || lib-error-check "Error executing user command: ${userCommand[*]}"
 
-for c in ${userCommand[0]}; do
+for c in ${userCommand[$offset]}; do
   [[ $CS_DEBUG == 1 ]] && echo "$c"
   if [[ $c == "-v" ]] || [[ $c == "--version" ]]; then
     cs-version $VERSION
