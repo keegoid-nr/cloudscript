@@ -16,19 +16,11 @@
 
 [[ -z $CS_DEBUG ]] && CS_DEBUG=0
 SSH_CONFIG="$HOME/.ssh/config"
-VERSION="v1.7"
-# set -o errexit
-# set -o nounset
-# set -o pipefail
-
-# Determine the shell that the script is being run from
-# if [[ "$SHELL" == "/bin/zsh" ]]; then
-  # Zsh is running, set offset to 1
-  # offset=1
-# else
-  # Bash is running, set offset to 0
-  offset=0
-# fi
+VERSION="v1.8"
+# ensure brace expansion is on for the shell
+set -o braceexpand && [[ $CS_DEBUG -eq 1 ]] && set -o && echo "$SHELL"
+# ensure Zsh uses zero-based arrays
+[[ "$SHELL" == "/bin/zsh" ]] && zsh -c 'emulate -LR zsh; setopt ksharrays; setopt' && [[ $CS_DEBUG -eq 1 ]] && echo "$SHELL"
 
 # --------------------------  LIBRARIES
 
@@ -63,7 +55,7 @@ lib-error-check() {
   local error_message="${2:-}"
   if (( exit_code != 0 )); then
     lib-debug
-    if [ -n "$error_message" ]; then
+    if [[-n "$error_message" ]]; then
       lib-msg "exit code: $exit_code, from: $error_message"
     fi
     exit "$exit_code"
@@ -72,10 +64,10 @@ lib-error-check() {
 
 # display debug info
 lib-debug() {
-  if [ -n "$ZSH_VERSION" ]; then
-    lib-msg "${funcstack[$offset+1]}(${funcline[$offset]}) - ARGS: $*"
+  if [[ "$SHELL" == "/bin/zsh" ]]; then
+    lib-msg "${funcstack[1]}(${funcline[0]}) - ARGS: $*"
   else
-    lib-msg "${FUNCNAME[$offset+1]}(${BASH_LINENO[$offset]}) - ARGS: $*"
+    lib-msg "${FUNCNAME[1]}(${BASH_LINENO[0]}) - ARGS: $*"
   fi
 }
 
@@ -221,7 +213,7 @@ eks-clusters() {
       instanceType=$(echo "$node_group_info" | jq -r '.instanceType')
       version=$(echo "$node_group_info" | jq -r '.version')
 
-      [[ $CS_DEBUG == 1 ]] && echo "$node_group_info"
+      [[ $CS_DEBUG -eq 1 ]] && echo "$node_group_info"
       cs-print-row "$cluster_name" "$cluster_status" "$node_group_name" "$node_group_status" "$min_size" "$max_size" "$desired_size" "$type" "$instanceType" "$version"
     done
   done
@@ -542,9 +534,10 @@ cs-ec2-go() {
 
 # capture input array
 userCommand=("$@") || lib-error-check 1 "Error executing user command: ${userCommand[*]}"
+[[ $CS_DEBUG -eq 1 ]] && echo "$@" && echo "${userCommand[0]}" && exit 0
 
-for c in ${userCommand[$offset]}; do
-  [[ $CS_DEBUG == 1 ]] && echo "$c"
+for c in ${userCommand[0]}; do
+  [[ $CS_DEBUG -eq 1 ]] && echo "$c"
   if [[ $c == "-v" ]] || [[ $c == "--version" ]]; then
     cs-version $VERSION
   elif [[ $c == "--help" ]]; then
