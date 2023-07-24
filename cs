@@ -194,7 +194,7 @@ eks-get-node-group() {
 
 eks-clusters() {
   [[ $CS_DEBUG -eq 1 ]] && lib-debug "$@"
-  clusters=$(aws eks list-eks-clusters --query 'eks-clusters[]' --output text --no-paginate)
+  clusters=$(aws eks list-clusters --query 'clusters[]' --output text --no-paginate)
 
   cs-print-row "Cluster Name" "Status" "Node Group Name" "Node Group Status" "Min Size" "Max Size" "Desired Size" "Node Group Type" "Instance Type" "K8s Version"
 
@@ -482,7 +482,7 @@ cs-lambda-go() {
 
 # $1: eks
 # $2: operation
-# $3: cluster name (optional), if blank will get list of available eks-clusters
+# $3: cluster name (optional), if blank will get list of available clusters
 # $4: node count for scaling up
 cs-eks-go() {
   cs-checks "eksctl"
@@ -534,7 +534,7 @@ cs-ec2-go() {
 
 # capture input array
 userCommand=("$@") || lib-error-check 1 "Error executing user command: ${userCommand[*]}"
-[[ $CS_DEBUG -eq 1 ]] && echo "$@" && echo "${userCommand[0]}" && exit 0
+[[ $CS_DEBUG -eq 1 ]] && echo "$@" && echo "${userCommand[0]}" # && exit 0
 
 for c in ${userCommand[0]}; do
   [[ $CS_DEBUG -eq 1 ]] && echo "$c"
