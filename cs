@@ -20,7 +20,7 @@ VERSION="v1.8"
 # ensure brace expansion is on for the shell
 set -o braceexpand && [[ $CS_DEBUG -eq 1 ]] && set -o && echo "$SHELL"
 # ensure Zsh uses zero-based arrays
-[[ "$SHELL" == "/bin/zsh" ]] && zsh -c 'emulate -LR zsh; setopt ksharrays; setopt' && [[ $CS_DEBUG -eq 1 ]] && echo "$SHELL"
+[[ "$SHELL" == "/bin/zsh" ]] && zsh -c 'emulate -LR zsh; setopt ksharrays' && [[ $CS_DEBUG -eq 1 ]] && echo "$SHELL"
 
 # --------------------------  LIBRARIES
 
