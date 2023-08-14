@@ -411,7 +411,7 @@ cs-usage() {
   echo ""
   echo "About:"
   echo "  cs -v, --version  Show version"
-  echo "  cs --help         Show this message"
+  echo "  cs -h, --help     Show this message"
   echo ""
   echo "Components:"
   echo "  ec2     Manage EC2 instance states"
@@ -532,6 +532,17 @@ cs-ec2-go() {
 
 # --------------------------  MAIN
 
+# check number of arguments
+if [[ $# -eq 0 ]]; then
+  cs-usage 1
+fi
+
+# validate arguments passed to script
+if [[ "$1" != "-v" ]] && [[ "$1" != "--version" ]] && [[ "$1" != "-h" ]] && [[ "$1" != "--help" ]] && [[ "$1" != "lambda" ]] && [[ "$1" != "eks" ]] && [[ "$1" != "ec2" ]]; then
+  echo "Invalid component: $1"
+  cs-usage 1
+fi
+
 # capture input array
 userCommand=("$@") || lib-error-check 1 "Error executing user command: ${userCommand[*]}"
 [[ $CS_DEBUG -eq 1 ]] && echo "$@" && echo "${userCommand[0]}" # && exit 0
@@ -540,7 +551,7 @@ for c in ${userCommand[0]}; do
   [[ $CS_DEBUG -eq 1 ]] && echo "$c"
   if [[ $c == "-v" ]] || [[ $c == "--version" ]]; then
     cs-version $VERSION
-  elif [[ $c == "--help" ]]; then
+  elif [[ $c == "--help" ]] || [[ $c == "-h" ]]; then
     cs-usage 0
   elif [[ $c == "lambda" ]]; then
     cs-lambda-go "${userCommand[@]}"
