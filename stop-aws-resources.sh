@@ -11,51 +11,63 @@
 
 # --------------------------  SETUP PARAMETERS
 
-# Define the North American AWS regions
+# Global variables
 REGIONS=("us-east-1" "us-east-2" "us-west-2" "ca-central-1")
+EXCLUDE_INSTANCES=("i-1234567890abcdef0" "i-abcdef1234567890a")
+EXCLUDE_CLUSTERS=("important-cluster1" "important-cluster2")
 
 # --------------------------  FUNCTIONS
 
 # Function to stop EC2 instances
 stop_ec2_instances() {
-    local region=$1
-    # Fetch the list of running instances
-    local instance_ids=$(aws ec2 describe-instances --region $region --query 'Reservations[*].Instances[*].[InstanceId]' --filters Name=instance-state-name,Values=running --output text)
+  local region=$1
+  local instance_ids
+  instance_ids=$(aws ec2 describe-instances --region "$region" --query 'Reservations[*].Instances[*].[InstanceId]' --filters Name=instance-state-name,Values=running --output text)
 
-    # Stop the instances
-    if [ -n "$instance_ids" ]; then
-        echo "Stopping instances: $instance_ids in region $region"
-        aws ec2 stop-instances --instance-ids $instance_ids --region $region
-    else
-        echo "No running instances found in region $region"
+  local filtered_ids=""
+  for id in $instance_ids; do
+    # shellcheck disable=SC2076
+    if [[ ! " ${EXCLUDE_INSTANCES[*]} " =~ " ${id} " ]]; then
+      filtered_ids="$filtered_ids $id"
     fi
+  done
+
+  if [ -n "$filtered_ids" ]; then
+    echo "Stopping instances: $filtered_ids in region $region"
+    aws ec2 stop-instances --instance-ids "$filtered_ids" --region "$region"
+  else
+    echo "No instances to stop in region $region after applying exclusion list"
+  fi
 }
 
 # Function to scale down EKS nodes
 scale_down_eks_nodes() {
-    local region=$1
-    # Get the list of EKS clusters in the region
-    local cluster_names=$(aws eks list-clusters --region $region --query 'clusters' --output text)
+  local region=$1
+  local cluster_names
+  cluster_names=$(aws eks list-clusters --region "$region" --query 'clusters' --output text)
 
-    # Loop through each cluster to update kubeconfig and scale down nodes
-    for cluster in $cluster_names; do
-        # Update kubeconfig for the cluster
-        aws eks update-kubeconfig --name $cluster --region $region
+  local filtered_clusters=""
+  for cluster in $cluster_names; do
+    # shellcheck disable=SC2076
+    if [[ ! " ${EXCLUDE_CLUSTERS[*]} " =~ " ${cluster} " ]]; then
+      filtered_clusters="$filtered_clusters $cluster"
+    fi
+  done
 
-        # Get the list of nodegroups for the cluster
-        local nodegroup_names=$(aws eks list-nodegroups --cluster-name $cluster --region $region --query 'nodegroups' --output text)
-
-        # Scale down each nodegroup
-        for nodegroup in $nodegroup_names; do
-            kubectl scale --replicas=0 deployment/$nodegroup
-        done
+  for cluster in $filtered_clusters; do
+    aws eks update-kubeconfig --name "$cluster" --region "$region"
+    local nodegroup_names
+    nodegroup_names=$(aws eks list-nodegroups --cluster-name "$cluster" --region "$region" --query 'nodegroups' --output text)
+    for nodegroup in $nodegroup_names; do
+      kubectl scale --replicas=0 "deployment/$nodegroup"
     done
+  done
 }
 
 # --------------------------  MAIN
 
-# Call functions for each region
+# Main execution loop
 for REGION in "${REGIONS[@]}"; do
-    stop_ec2_instances $REGION
-    scale_down_eks_nodes $REGION
+  stop_ec2_instances "$REGION"
+  scale_down_eks_nodes "$REGION"
 done
