@@ -142,7 +142,13 @@ EOF
 
 ec2-ids() {
   [[ $CS_DEBUG -eq 1 ]] && lib-debug
-  output=$(aws ec2 describe-instances --query 'Reservations[].Instances[].[InstanceId, Tags[?Key==`Name`].Value|[0], State.Name]' --output json --no-paginate | jq -r 'sort_by(.[1])[] | "\(.[0]) | \(.[1]) | \(.[2])"')
+  # output=$(aws ec2 describe-instances --query 'Reservations[].Instances[].[InstanceId, Tags[?Key==`Name`].Value|[0], State.Name]' --output json --no-paginate | jq -r 'sort_by(.[1])[] | "\(.[0]) | \(.[1]) | \(.[2])"')
+  # Get EC2 instances
+  ec2_instances=$(aws ec2 describe-instances --query 'Reservations[].Instances[].[InstanceId, Tags[?Key==`Name`].Value|[0], State.Name]' --output text --no-paginate)
+  # Sort the output by the Name field
+  sorted_ec2_instances=$(echo "$ec2_instances" | sort -k 2)
+  # Format the output
+  output=$(echo "$sorted_ec2_instances" | awk '{printf "%s | %s | %s\n", $1, $2, $3}')
   header="Instance ID | Name | State"
   cs-print-table "$header\n$output"
   lib-error-check "$?" "ec2-ids"
@@ -151,7 +157,11 @@ ec2-ids() {
 ec2-status() {
   [[ $CS_DEBUG -eq 1 ]] && lib-debug "$@"
   [[ -z $1 ]] && ec2-ids && return 0
-  output=$(aws ec2 describe-instance-status --instance-ids "$1" --output json | jq -r '.InstanceStatuses[] | "\(.InstanceId) | \(.InstanceState.Name) | \(.InstanceStatus.Status) | \(.SystemStatus.Status)"')
+  # Get the EC2 instance
+  # output=$(aws ec2 describe-instance-status --instance-ids "$1" --output json | jq -r '.InstanceStatuses[] | "\(.InstanceId) | \(.InstanceState.Name) | \(.InstanceStatus.Status) | \(.SystemStatus.Status)"')
+  ec2_instance=$(aws ec2 describe-instance-status --instance-ids "$1" --query 'InstanceStatuses[*].[InstanceId, InstanceState.Name, InstanceStatus.Status, SystemStatus.Status]' --output text)
+  # Format the output
+  output=$(echo "$ec2_instance" | awk '{printf "%s | %s | %s | %s\n", $1, $2, $3, $4}')
   header="Instance ID | Instance State | Instance Status | System Status"
   cs-print-table "$header\n$output"
   lib-error-check "$?" "ec2-status"
@@ -248,7 +258,12 @@ eks-stop() {
 
 ms-status() {
   [[ $CS_DEBUG -eq 1 ]] && lib-debug
-  output=$(aws cloudwatch list-metric-streams --query 'Entries[*].[Name, State, CreationDate, LastUpdateDate]' --output text | awk '{printf "%s | %s | %s | %s\n", $1, $2, $3, $4}')
+  # Get the streams info
+  metric_streams=$(aws cloudwatch list-metric-streams --query 'Entries[*].[Name, State, CreationDate, LastUpdateDate]' --output text --no-paginate)
+  # Sort the output by the Name field
+  sorted_metric_streams=$(echo "$metric_streams" | sort -k 1)
+  # Format the output
+  output=$(echo "$sorted_metric_streams" | awk '{printf "%s | %s | %s | %s\n", $1, $2, $3, $4}')
   header="Metric Stream Name | State | Creation Date | Last Update Date"
   cs-print-table "$header\n$output"
   lib-error-check "$?" "ms-status"
