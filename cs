@@ -16,7 +16,7 @@
 
 [[ -z $CS_DEBUG ]] && CS_DEBUG=0
 SSH_CONFIG="$HOME/.ssh/config"
-VERSION="v1.8"
+VERSION="v1.9"
 # ensure brace expansion is on for the shell
 set -o braceexpand && [[ $CS_DEBUG -eq 1 ]] && set -o && echo "$SHELL"
 # ensure Zsh uses zero-based arrays
@@ -141,7 +141,7 @@ EOF
 }
 
 ec2-ids() {
-  [[ $CS_DEBUG -eq 1 ]] && lib-debug "$@"
+  [[ $CS_DEBUG -eq 1 ]] && lib-debug
   output=$(aws ec2 describe-instances --query 'Reservations[].Instances[].[InstanceId, Tags[?Key==`Name`].Value|[0], State.Name]' --output json --no-paginate | jq -r 'sort_by(.[1])[] | "\(.[0]) | \(.[1]) | \(.[2])"')
   header="Instance ID | Name | State"
   cs-print-table "$header\n$output"
@@ -150,7 +150,7 @@ ec2-ids() {
 
 ec2-status() {
   [[ $CS_DEBUG -eq 1 ]] && lib-debug "$@"
-  [[ -z $1 ]] && ec2-ids "$@" && return 0
+  [[ -z $1 ]] && ec2-ids && return 0
   output=$(aws ec2 describe-instance-status --instance-ids "$1" --output json | jq -r '.InstanceStatuses[] | "\(.InstanceId) | \(.InstanceState.Name) | \(.InstanceStatus.Status) | \(.SystemStatus.Status)"')
   header="Instance ID | Instance State | Instance Status | System Status"
   cs-print-table "$header\n$output"
@@ -159,7 +159,7 @@ ec2-status() {
 
 ec2-start() {
   [[ $CS_DEBUG -eq 1 ]] && lib-debug "$@"
-  [[ -z $1 ]] && ec2-ids "$@" && return 0
+  [[ -z $1 ]] && ec2-ids && return 0
   aws ec2 start-instances --instance-ids "$1" --output text --no-paginate
   lib-error-check "$?" "start-instances"
   ec2-update-ssh "$1"
@@ -168,21 +168,21 @@ ec2-start() {
 
 ec2-stop() {
   [[ $CS_DEBUG -eq 1 ]] && lib-debug "$@"
-  [[ -z $1 ]] && ec2-ids "$@" && return 0
+  [[ -z $1 ]] && ec2-ids && return 0
   aws ec2 stop-instances --instance-ids "$1" --output text --no-paginate
   lib-error-check "$?" "ec2-stop"
 }
 
 ec2-restart() {
   [[ $CS_DEBUG -eq 1 ]] && lib-debug "$@"
-  [[ -z $1 ]] && ec2-ids "$@" && return 0
+  [[ -z $1 ]] && ec2-ids && return 0
   aws ec2 reboot-instances --instance-ids "$1" --output text --no-paginate
   lib-error-check "$?" "ec2-restart"
 }
 
 ec2-ssh() {
   [[ $CS_DEBUG -eq 1 ]] && lib-debug "$@"
-  [[ -z $1 ]] && ec2-ids "$@" && return 0
+  [[ -z $1 ]] && ec2-ids && return 0
   ec2-start "$1"
 }
 
@@ -242,6 +242,30 @@ eks-stop() {
   [[ -z $1 ]] && eks-clusters "$@" && return 0
   eksctl scale ng "$(eks-get-node-group "$1")" --cluster "$1" -N 0
   lib-error-check "$?" "eks-stop"
+}
+
+# --------------------------- METRIC STREAMS
+
+ms-status() {
+  [[ $CS_DEBUG -eq 1 ]] && lib-debug
+  output=$(aws cloudwatch list-metric-streams --query 'Entries[*].[Name, State, CreationDate, LastUpdateDate]' --output text | awk '{printf "%s | %s | %s | %s\n", $1, $2, $3, $4}')
+  header="Metric Stream Name | State | Creation Date | Last Update Date"
+  cs-print-table "$header\n$output"
+  lib-error-check "$?" "ms-status"
+}
+
+ms-start() {
+  [[ $CS_DEBUG -eq 1 ]] && lib-debug "$@"
+  [[ -z $1 ]] && cs-usage 1
+  aws cloudwatch start-metric-streams --names "$1"
+  lib-error-check "$?" "ms-start"
+}
+
+ms-stop() {
+  [[ $CS_DEBUG -eq 1 ]] && lib-debug "$@"
+  [[ -z $1 ]] && cs-usage 1
+  aws cloudwatch stop-metric-streams --names "$1"
+  lib-error-check "$?" "ms-stop"
 }
 
 # --------------------------- LAMBDA FUNCTIONS
@@ -416,6 +440,7 @@ cs-usage() {
   echo "Components:"
   echo "  ec2     Manage EC2 instance states"
   echo "  eks     Manage EKS node states"
+  echo "  ms      Manage Metric Stream states"
   echo "  lambda  List and download New Relic Lambda layers"
   echo ""
   echo "Components and Args:"
@@ -424,12 +449,16 @@ cs-usage() {
   echo "  eks status"
   echo "  eks start <cluster> <number of nodes>"
   echo "  eks stop <cluster>"
+  echo "  ms status"
+  echo "  ms start <stream name>"
+  echo "  ms stop <stream name>"
   echo "  lambda lambda-list-layers [runtime]|[all] [region]"
   echo "  lambda lambda-download-layers [layer]|[all] [region] [build]|[latest] [extension]|[agent]"
   echo ""
   echo "Examples:"
   echo "  cs ec2 status"
   echo "  cs eks start my-cluster 2"
+  echo "  cs ms start my-stream"
   echo "  cs lambda lambda-list-layers                                     List layer names"
   echo "  cs lambda lambda-list-layers all                                 Details for all layers"
   echo "  cs lambda lambda-list-layers nodejs18.x us-west-2                Details for a specific layer"
@@ -473,6 +502,28 @@ cs-lambda-go() {
     ;;
   'download-layers')
    lambda-download-layers "$3" "$4" "$5" "$6"
+    ;;
+  *)
+    cs-usage 1
+    ;;
+  esac
+}
+
+# $1: ms
+# $2: operation
+# $3: stream name (optional), if blank will get list of available streams
+cs-ms-go() {
+  cs-checks "aws"
+
+  case "$2" in
+  'start')
+    ms-start "$3"
+    ;;
+  'stop')
+    ms-stop "$3"
+    ;;
+  'status')
+    ms-status
     ;;
   *)
     cs-usage 1
@@ -538,7 +589,7 @@ if [[ $# -eq 0 ]]; then
 fi
 
 # validate arguments passed to script
-if [[ "$1" != "-v" ]] && [[ "$1" != "--version" ]] && [[ "$1" != "-h" ]] && [[ "$1" != "--help" ]] && [[ "$1" != "lambda" ]] && [[ "$1" != "eks" ]] && [[ "$1" != "ec2" ]]; then
+if [[ "$1" != "-v" ]] && [[ "$1" != "--version" ]] && [[ "$1" != "-h" ]] && [[ "$1" != "--help" ]] && [[ "$1" != "lambda" ]] && [[ "$1" != "ms" ]] && [[ "$1" != "eks" ]] && [[ "$1" != "ec2" ]]; then
   echo "Invalid component: $1"
   cs-usage 1
 fi
@@ -555,6 +606,8 @@ for c in ${userCommand[0]}; do
     cs-usage 0
   elif [[ $c == "lambda" ]]; then
     cs-lambda-go "${userCommand[@]}"
+  elif [[ $c == "ms" ]]; then
+    cs-ms-go "${userCommand[@]}"
   elif [[ $c == "eks" ]]; then
     cs-eks-go "${userCommand[@]}"
   elif [[ $c == "ec2" ]]; then
