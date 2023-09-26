@@ -16,7 +16,7 @@
 
 [[ -z $CS_DEBUG ]] && CS_DEBUG=0
 SSH_CONFIG="$HOME/.ssh/config"
-VERSION="v1.9"
+VERSION="v2.0"
 # ensure brace expansion is on for the shell
 set -o braceexpand && [[ $CS_DEBUG -eq 1 ]] && set -o && echo "$SHELL"
 # ensure Zsh uses zero-based arrays
@@ -274,6 +274,7 @@ ms-start() {
   [[ -z $1 ]] && cs-usage 1
   aws cloudwatch start-metric-streams --names "$1"
   lib-error-check "$?" "ms-start"
+  ms-status
 }
 
 ms-stop() {
@@ -281,6 +282,7 @@ ms-stop() {
   [[ -z $1 ]] && cs-usage 1
   aws cloudwatch stop-metric-streams --names "$1"
   lib-error-check "$?" "ms-stop"
+  ms-status
 }
 
 # --------------------------- LAMBDA FUNCTIONS
