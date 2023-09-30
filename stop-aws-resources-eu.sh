@@ -19,8 +19,6 @@ set -o braceexpand && [[ $CS_DEBUG -eq 1 ]] && set -o && echo "$SHELL"
 
 VERSION="v0.1"
 
-# REGIONS=("us-east-1" "us-east-2" "us-west-2" "ca-central-1")
-# REGIONS=("ap-south-1")
 REGIONS=("eu-west-1" "eu-west-2")
 
 # Updated Global variables for exclusion lists
