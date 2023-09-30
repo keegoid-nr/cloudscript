@@ -20,6 +20,7 @@ set -o braceexpand && [[ $CS_DEBUG -eq 1 ]] && set -o && echo "$SHELL"
 VERSION="v0.1"
 
 REGIONS=("us-east-1" "us-east-2" "us-west-2" "ca-central-1")
+SHIFT="us"
 
 # Updated Global variables for exclusion lists
 EXCLUDE_METRIC_STREAMS=()
@@ -78,7 +79,7 @@ lib-msg() {
 }
 
 lib-version() {
-  lib-msg "stop-aws-resources-ap $1"
+  lib-msg "stop-aws-resources-$SHIFT $1"
 }
 
 # display message before exit
