@@ -7,9 +7,11 @@
 # Email  : kmullaney@newrelic.com
 # Website: github.com/keegoid-nr/cloudscript
 # License: MIT
-# Cron US: 0 9 * * * /usr/local/bin/stop-aws-resources-us.sh >> /var/log/stop-aws-resources-us.log 2>&1
-# Cron AP: 0 12 * * * /usr/local/bin/stop-aws-resources-ap.sh >> /var/log/stop-aws-resources-ap.log 2>&1
-# Cron EU: 0 19 * * * /usr/local/bin/stop-aws-resources-eu.sh >> /var/log/stop-aws-resources-eu.log 2>&1
+# $ crontab -l
+# PATH=/usr/local/bin:$PATH
+# * 9 * * * /usr/local/bin/stop-aws-resources-us.sh >> /var/log/aws-resource-logs/stop-aws-resources-us.log 2>&1
+# * 12 * * * /usr/local/bin/stop-aws-resources-ap.sh >> /var/log/aws-resource-logs/stop-aws-resources-ap.log 2>&1
+# * 19 * * * /usr/local/bin/stop-aws-resources-eu.sh >> /var/log/aws-resource-logs/stop-aws-resources-eu.log 2>&1
 # -----------------------------------------------------
 
 # --------------------------  SETUP PARAMETERS
@@ -21,10 +23,11 @@ VERSION="v0.1"
 
 REGIONS=("us-east-1" "us-east-2" "us-west-2" "ca-central-1")
 SHIFT="us"
+KUBECONFIG=/home/ec2-user/.kube/config
 
 # Updated Global variables for exclusion lists
 EXCLUDE_METRIC_STREAMS=()
-EXCLUDE_INSTANCES=()
+EXCLUDE_INSTANCES=("i-0cb1c25d3f6adb70b")
 EXCLUDE_ECS_CLUSTERS=()
 EXCLUDE_EKS_CLUSTERS=()
 EXCLUDE_LOG_GROUPS=("/aws/lambda/aws-controltower-NotificationForwarder")
@@ -92,7 +95,7 @@ lib-thanks() {
 
 lib_is_excluded() {
   local resource=$1
-  local -n exclusion_list=$2  # -n makes exclusion_list a reference to the array passed
+  local -n exclusion_list=$2 # -n makes exclusion_list a reference to the array passed
   for exclude in "${exclusion_list[@]}"; do
     [[ "$resource" == "$exclude" ]] && echo "  -> skipping $resource" && return 0
   done
@@ -194,11 +197,11 @@ set_log_group_retention() {
   # iterate through the log groups and call the set log group retention
   while read -r log_group current_retention; do
     if [ "$current_retention" != "$RETENTION_PERIOD" ]; then
-        lib_is_excluded "$log_group" EXCLUDE_LOG_GROUPS && continue
-        echo "  -> setting CW log group retention for $log_group to $RETENTION_PERIOD days"
-        aws logs put-retention-policy --region "$region" --log-group-name "$log_group" --retention-in-days $RETENTION_PERIOD --output text --no-paginate
+      lib_is_excluded "$log_group" EXCLUDE_LOG_GROUPS && continue
+      echo "  -> setting CW log group retention for $log_group to $RETENTION_PERIOD days"
+      aws logs put-retention-policy --region "$region" --log-group-name "$log_group" --retention-in-days $RETENTION_PERIOD --output text --no-paginate
     fi
-  done <<< "$(aws logs describe-log-groups --region "$region" --query 'logGroups[*].[logGroupName, retentionInDays]' --output text)"
+  done <<<"$(aws logs describe-log-groups --region "$region" --query 'logGroups[*].[logGroupName, retentionInDays]' --output text)"
 }
 
 # --------------------------  MAIN EXECUTION

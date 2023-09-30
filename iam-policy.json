@@ -1,0 +1,21 @@
+{
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Sid": "VisualEditor0",
+            "Effect": "Allow",
+            "Action": [
+                "autoscaling:*",
+                "cloudformation:*",
+                "cloudwatch:*",
+                "ec2:*",
+                "ecs:*",
+                "eks:*",
+                "elasticloadbalancing:*",
+                "logs:*",
+                "sts:GetCallerIdentity"
+            ],
+            "Resource": "*"
+        }
+    ]
+}
