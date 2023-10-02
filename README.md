@@ -1,5 +1,7 @@
 # CloudScript
 
+[![pre-commit: enabled](https://img.shields.io/badge/pre--commit-enabled-brightgreen?logo=pre-commit&logoColor=white)](https://github.com/pre-commit/pre-commit)
+
 <!-- START doctoc generated TOC please keep comment here to allow auto update -->
 <!-- DON'T EDIT THIS SECTION, INSTEAD RE-RUN doctoc TO UPDATE -->
 **Table of Contents**  *generated with [DocToc](https://github.com/thlorenz/doctoc)*
@@ -9,6 +11,7 @@
   - [EC2](#ec2)
   - [EKS](#eks)
   - [Lambda](#lambda)
+- [Verify SHA Sums](#verify-sha-sums)
 - [Contributing](#contributing)
 
 <!-- END doctoc generated TOC please keep comment here to allow auto update -->
@@ -160,6 +163,33 @@ cs lambda download-layers NewRelicPython39 us-west-2 36
 - If leaving off the optional extension or agent, details for both will be displayed.
 
 *Tested on Ubuntu 22.04 with Bash version 5.1.16*
+
+## Verify SHA Sums
+
+You can download the latest releases [here](https://github.com/keegoid-nr/cloudscript/releases). The `cs` file and its checksum are signed and can be verified against the developer's [public PGP key](https://raw.githubusercontent.com/keegoid-nr/cloudscript/main/kmullaney.asc).
+
+Import the signing key:
+
+```sh
+gpg --import kmullaney.asc
+```
+
+Verify that the fingerprint for the downloaded key matches the following:
+
+```sh
+gpg --fingerprint kmullaney@newrelic.com
+E67B C11C D9B3 EC3B 81B7  0C35 68BF EBFB 3C1B 8D5A
+```
+
+When verifying the checksum, use the long format (the short format is not secure). For example:
+
+```sh
+gpg --keyid-format long --verify SHA512SUMS.asc SHA512SUMS
+```
+
+---
+
+*Special thanks to [NVM](https://github.com/nvm-sh/nvm) for inspiration.*
 
 ## Contributing
 

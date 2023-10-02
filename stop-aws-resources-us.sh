@@ -9,19 +9,19 @@
 # License: MIT
 # $ crontab -l
 # PATH=/usr/local/bin:$PATH
-# * 9 * * * /usr/local/bin/stop-aws-resources-us.sh >> /var/log/aws-resource-logs/stop-aws-resources-us.log 2>&1
-# * 12 * * * /usr/local/bin/stop-aws-resources-ap.sh >> /var/log/aws-resource-logs/stop-aws-resources-ap.log 2>&1
-# * 19 * * * /usr/local/bin/stop-aws-resources-eu.sh >> /var/log/aws-resource-logs/stop-aws-resources-eu.log 2>&1
+# 0 9 * * * /usr/local/bin/stop-aws-resources-us.sh >> /var/log/aws-resource-logs/stop-aws-resources-us.log 2>&1
+# 0 14 * * * /usr/local/bin/stop-aws-resources-ap.sh >> /var/log/aws-resource-logs/stop-aws-resources-ap.log 2>&1
+# 0 19 * * * /usr/local/bin/stop-aws-resources-eu.sh >> /var/log/aws-resource-logs/stop-aws-resources-eu.log 2>&1
 # -----------------------------------------------------
 
 # --------------------------  SETUP PARAMETERS
 
+REGIONS=("us-east-1" "us-east-2" "us-west-2" "ca-central-1")
+
 # ensure brace expansion is on for the shell
 set -o braceexpand && [[ $CS_DEBUG -eq 1 ]] && set -o && echo "$SHELL"
 
-VERSION="v0.1"
-
-REGIONS=("us-east-1" "us-east-2" "us-west-2" "ca-central-1")
+VERSION="v0.2"
 SHIFT="us"
 KUBECONFIG=/home/ec2-user/.kube/config
 
@@ -85,6 +85,12 @@ lib-version() {
   lib-msg "stop-aws-resources-$SHIFT $1"
 }
 
+lib-log() {
+  timestamp=$(date +"%Y-%m-%d %H:%M:%S")
+  log_message="  -> $timestamp - $1"
+  echo "$log_message"
+}
+
 # display message before exit
 # $1 -> version string
 lib-thanks() {
@@ -97,7 +103,7 @@ lib_is_excluded() {
   local resource=$1
   local -n exclusion_list=$2 # -n makes exclusion_list a reference to the array passed
   for exclude in "${exclusion_list[@]}"; do
-    [[ "$resource" == "$exclude" ]] && echo "  -> skipping $resource" && return 0
+    [[ "$resource" == "$exclude" ]] && lib-log "skipping $resource" && return 0
   done
   return 1
 }
@@ -117,7 +123,7 @@ stop_instances() {
   # shellcheck disable=SC2016
   for instance in $(aws ec2 describe-instances --region "$region" --query 'Reservations[].Instances[?State.Name==`running`].InstanceId' --output text); do
     lib_is_excluded "$instance" EXCLUDE_INSTANCES && continue
-    echo "  -> stopping $instance"
+    lib-log "stopping $instance"
     aws ec2 stop-instances --region "$region" --instance-ids "$instance" --output text --no-paginate
   done
 }
@@ -131,13 +137,13 @@ scale_down_ecs_clusters() {
 
     # Update all services to have 0 desired count
     for service in $(aws ecs list-services --region "$region" --cluster "$cluster" --query 'serviceArns[]' --output text); do
-      echo "  -> scaling $service in $cluster to 0"
+      lib-log "scaling $service in $cluster to 0"
       aws ecs update-service --region "$region" --cluster "$cluster" --service "$service" --desired-count 0 --output text --no-paginate
     done
 
     # Stop all running tasks
     for task in $(aws ecs list-tasks --region "$region" --cluster "$cluster" --query 'taskArns[]' --output text); do
-      echo "  -> stopping task $task in $cluster"
+      lib-log "stopping task $task in $cluster"
       aws ecs stop-task --region "$region" --cluster "$cluster" --task "$task" --output text --no-paginate
     done
   done
@@ -157,7 +163,7 @@ scale_down_eks_clusters() {
     for nodegroup in $aws_nodegroup_names; do
       current_node_count=$(aws eks describe-nodegroup --region "$region" --cluster-name "$eks_cluster" --nodegroup-name "$nodegroup" --query 'nodegroup.scalingConfig.desiredSize')
       if [ "$current_node_count" != "0" ]; then
-        echo "  -> scaling $nodegroup in $eks_cluster to 0"
+        lib-log "scaling $nodegroup in $eks_cluster to 0"
         aws eks update-nodegroup-config --region "$region" --cluster-name "$eks_cluster" --nodegroup-name "$nodegroup" --scaling-config desiredSize=0,minSize=0 --output text --no-paginate
       fi
     done
@@ -169,7 +175,7 @@ scale_down_eks_clusters() {
     for nodegroup in $eksctl_nodegroup_names; do
       current_node_count=$(eksctl get ng --region "$region" --cluster "$eks_cluster" --name "$nodegroup" | awk 'NR>1 {print $7}')
       if [ "$current_node_count" != "0" ]; then
-        echo "  -> scaling $nodegroup in $eks_cluster to 0"
+        lib-log "scaling $nodegroup in $eks_cluster to 0"
         eksctl scale ng "$nodegroup" --region "$region" --cluster "$eks_cluster" -N 0
       fi
     done
@@ -184,7 +190,7 @@ stop_metric_streams() {
     lib_is_excluded "$stream" EXCLUDE_METRIC_STREAMS && continue
     stream_state=$(aws cloudwatch get-metric-stream --region "$region" --name "$stream" --query 'State' --output text)
     if [ "$stream_state" != "stopped" ]; then
-      echo "  -> stopping $stream"
+      lib-log "stopping $stream"
       aws cloudwatch stop-metric-streams --region "$region" --names "$stream"
     fi
   done
@@ -198,7 +204,7 @@ set_log_group_retention() {
   while read -r log_group current_retention; do
     if [ "$current_retention" != "$RETENTION_PERIOD" ]; then
       lib_is_excluded "$log_group" EXCLUDE_LOG_GROUPS && continue
-      echo "  -> setting CW log group retention for $log_group to $RETENTION_PERIOD days"
+      lib-log "setting CW log group retention for $log_group to $RETENTION_PERIOD days"
       aws logs put-retention-policy --region "$region" --log-group-name "$log_group" --retention-in-days $RETENTION_PERIOD --output text --no-paginate
     fi
   done <<<"$(aws logs describe-log-groups --region "$region" --query 'logGroups[*].[logGroupName, retentionInDays]' --output text)"
