@@ -27,7 +27,7 @@ KUBECONFIG=/home/ec2-user/.kube/config
 
 # Updated Global variables for exclusion lists
 EXCLUDE_METRIC_STREAMS=()
-EXCLUDE_INSTANCES=("i-0cb1c25d3f6adb70b")
+EXCLUDE_INSTANCES=("i-0b8b0b52b9628ffb4")
 EXCLUDE_ECS_CLUSTERS=()
 EXCLUDE_EKS_CLUSTERS=()
 EXCLUDE_LOG_GROUPS=("/aws/lambda/aws-controltower-NotificationForwarder")
