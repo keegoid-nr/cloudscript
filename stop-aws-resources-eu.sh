@@ -87,7 +87,7 @@ lib-version() {
 
 lib-log() {
   timestamp=$(date +"%Y-%m-%d %H:%M:%S")
-  log_message="  -> $timestamp - $1"
+  log_message="$timestamp | $1"
   echo "$log_message"
 }
 
@@ -119,19 +119,20 @@ lib_print_header() {
 stop_instances() {
   lib-checks "aws"
   local region=$1
-  lib_print_header "EC2 instances" "Stopping"
+  # local action=0
   # shellcheck disable=SC2016
   for instance in $(aws ec2 describe-instances --region "$region" --query 'Reservations[].Instances[?State.Name==`running`].InstanceId' --output text); do
     lib_is_excluded "$instance" EXCLUDE_INSTANCES && continue
     lib-log "stopping $instance"
     aws ec2 stop-instances --region "$region" --instance-ids "$instance" --output text --no-paginate
+    # action=1
   done
+  # [[ "$action" -eq 1 ]] && lib_print_header "EC2 instances" "Stopped"
 }
 
 scale_down_ecs_clusters() {
   lib-checks "aws"
   local region=$1
-  lib_print_header "ECS clusters" "Scaling down"
   for cluster in $(aws ecs list-clusters --region "$region" --query 'clusterArns[]' --output text); do
     lib_is_excluded "$cluster" EXCLUDE_ECS_CLUSTERS && continue
 
@@ -147,6 +148,7 @@ scale_down_ecs_clusters() {
       aws ecs stop-task --region "$region" --cluster "$cluster" --task "$task" --output text --no-paginate
     done
   done
+  # lib_print_header "ECS Clusters" "Scaled down"
 }
 
 scale_down_eks_clusters() {
@@ -154,7 +156,6 @@ scale_down_eks_clusters() {
   lib-checks "eksctl"
   lib-checks "kubectl"
   local region=$1
-  lib_print_header "EKS clusters" "Scaling down"
   for eks_cluster in $(aws eks list-clusters --region "$region" --query 'clusters[]' --output text); do
     lib_is_excluded "$eks_cluster" EXCLUDE_EKS_CLUSTERS && continue
 
@@ -180,12 +181,12 @@ scale_down_eks_clusters() {
       fi
     done
   done
+  # lib_print_header "EKS clusters" "Scaled down"
 }
 
 stop_metric_streams() {
   lib-checks "aws"
   local region=$1
-  lib_print_header "CW Metric Streams" "Stopping"
   for stream in $(aws cloudwatch list-metric-streams --region "$region" --query 'Entries[].Name' --output text); do
     lib_is_excluded "$stream" EXCLUDE_METRIC_STREAMS && continue
     stream_state=$(aws cloudwatch get-metric-stream --region "$region" --name "$stream" --query 'State' --output text)
@@ -194,11 +195,11 @@ stop_metric_streams() {
       aws cloudwatch stop-metric-streams --region "$region" --names "$stream"
     fi
   done
+  # lib_print_header "CW Metric Streams" "Stopped"
 }
 
 set_log_group_retention() {
   local region=$1
-  lib_print_header "CW log groups" "Setting retention"
 
   # iterate through the log groups and call the set log group retention
   while read -r log_group current_retention; do
@@ -208,6 +209,7 @@ set_log_group_retention() {
       aws logs put-retention-policy --region "$region" --log-group-name "$log_group" --retention-in-days $RETENTION_PERIOD --output text --no-paginate
     fi
   done <<<"$(aws logs describe-log-groups --region "$region" --query 'logGroups[*].[logGroupName, retentionInDays]' --output text)"
+  # lib_print_header "CW log groups" "Retention set"
 }
 
 # --------------------------  MAIN EXECUTION
