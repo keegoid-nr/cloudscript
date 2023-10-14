@@ -1,7 +1,7 @@
 default_stages: [commit, push]
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v4.4.0
+    rev: v4.5.0
     hooks:
       - id: check-merge-conflict
       - id: destroyed-symlinks
@@ -12,3 +12,9 @@ repos:
     hooks:
       - id: doctoc
         args: [-u]
+  - repo: https://github.com/keegoid-nr/check-for-keys
+    rev: 7e488ecd5465ab5467059f2ef9cecfa5df3a6663
+    hooks:
+      - id: check-for-keys-pre-commit
+      - id: check-for-keys-pre-push
+      - id: check-for-keys-prepare-commit-msg
