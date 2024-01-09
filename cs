@@ -54,8 +54,8 @@ lib-error-check() {
   local exit_code="${1:-0}"
   local error_message="${2:-}"
   if (( exit_code != 0 )); then
-    lib-debug
-    if [[-n "$error_message" ]]; then
+    lib-debug "@"
+    if [[ -n "$error_message" ]]; then
       lib-msg "exit code: $exit_code, from: $error_message"
     fi
     exit "$exit_code"
