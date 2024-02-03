@@ -120,7 +120,8 @@ ec2-update-ssh() {
   lib-msg "Enter a \"Host\" to update from $SSH_CONFIG"
   echo
   read -erp "   : " match
-  currentUser=$(sed -rne "/$match/,/User/ {s/.*User (.*)/\1/p}" "$SSH_CONFIG")
+  # currentUser=$(sed -rne "/$match/,/User/ {s/.*User (.*)/\1/p}" "$SSH_CONFIG")
+  currentUser=$(sed -n   "/$match/,/User/ s/.*User \(.*\)/\1/p" "$SSH_CONFIG")
   lib-msg "Enter a \"User\" to update from $SSH_CONFIG"
   read -erp "   : " -i "$currentUser" username
   echo
