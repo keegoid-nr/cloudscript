@@ -121,14 +121,14 @@ ec2-update-ssh() {
   echo
   read -erp "   : " match
   # currentUser=$(sed -rne "/$match/,/User/ {s/.*User (.*)/\1/p}" "$SSH_CONFIG")
-  currentUser=$(sed -n   "/$match/,/User/ s/.*User \(.*\)/\1/p" "$SSH_CONFIG")
+  currentUser=$(sed -n "/^Host $match\$/,/^Host /{ /^  User /{ s/.*User \(.*\)/\1/p; q; }; }" "$SSH_CONFIG")
   lib-msg "Enter a \"User\" to update from $SSH_CONFIG"
   read -erp "   : " -i "$currentUser" username
   echo
-  if grep -q "$match" "$SSH_CONFIG"; then
+  if grep -q "^Host $match$" "$SSH_CONFIG"; then
     # for an existing host, modify Hostname and User
-    sed -i.bak -e "/$match/,/User/ s/Hostname.*/Hostname $hostname/" \
-      -e "/$match/,/User/ s/User.*/User $username/" "$SSH_CONFIG"
+    # sed -i.bak -e "/^Host $match$/,/^Host /{s/^  Hostname .*/  Hostname $hostname/;s/^  User .*/  User $username/;}" -e "/^Host $match$/,/^Host /!b;/^Host /{x;d;};x" "$SSH_CONFIG"
+    sed -i.bak -e "/^Host $match\$/,/^  User/{s/^  Hostname.*/  Hostname $hostname/;s/^  User.*/  User $username/;}" "$SSH_CONFIG"
   else
     # add new host
     cat <<-EOF >>"$SSH_CONFIG"
@@ -140,6 +140,8 @@ EOF
   lib-msg "\nModified ~/.ssh/config:"
   cat ~/.ssh/config
 }
+
+
 
 ec2-ids() {
   [[ $CS_DEBUG -eq 1 ]] && lib-debug
