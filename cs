@@ -128,7 +128,16 @@ ec2-update-ssh() {
   if grep -q "^Host $match$" "$SSH_CONFIG"; then
     # for an existing host, modify Hostname and User
     # sed -i.bak -e "/^Host $match$/,/^Host /{s/^  Hostname .*/  Hostname $hostname/;s/^  User .*/  User $username/;}" -e "/^Host $match$/,/^Host /!b;/^Host /{x;d;};x" "$SSH_CONFIG"
-    sed -i.bak -e "/^Host $match\$/,/^  User/{s/^  Hostname.*/  Hostname $hostname/;s/^  User.*/  User $username/;}" "$SSH_CONFIG"
+    # Store the directory where the symlink is located
+    symlink_dir=$(dirname /Users/kmullaney/.ssh/config)
+
+    # Use readlink to get the relative target path
+    relative_target=$(readlink /Users/kmullaney/.ssh/config)
+
+    # Resolve the relative path to an absolute path
+    absolute_target=$(cd "$symlink_dir"; cd "$(dirname "$relative_target")"; pwd)/$(basename "$relative_target")
+
+    sed -i.bak -e "/^Host $match\$/,/^  User/{s/^  Hostname.*/  Hostname $hostname/;s/^  User.*/  User $username/;}" "$absolute_target"
   else
     # add new host
     cat <<-EOF >>"$SSH_CONFIG"
