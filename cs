@@ -16,7 +16,7 @@
 
 [[ -z $CS_DEBUG ]] && CS_DEBUG=0
 SSH_CONFIG="$HOME/.ssh/config"
-VERSION="v2.0"
+VERSION="v2.1"
 # ensure brace expansion is on for the shell
 set -o braceexpand && [[ $CS_DEBUG -eq 1 ]] && set -o && echo "$SHELL"
 # ensure Zsh uses zero-based arrays
@@ -35,10 +35,6 @@ lib-is-number() {
 
 lib-has() {
   type "$1" >/dev/null 2>&1
-}
-
-lib-echo() {
-  echo "~~~ ${1} ~~~"
 }
 
 # output message with encoded characters
@@ -65,6 +61,7 @@ lib-error-check() {
 # display debug info
 lib-debug() {
   if [[ "$SHELL" == "/bin/zsh" ]]; then
+    # shellcheck disable=SC2154
     lib-msg "${funcstack[1]}(${funcline[0]}) - ARGS: $*"
   else
     lib-msg "${FUNCNAME[1]}(${BASH_LINENO[0]}) - ARGS: $*"
@@ -93,8 +90,8 @@ cs-print-table() {
   echo -e "$input" | column -t -s '|'
 }
 
-cs-print-row() {
-  printf "%-40s %-9s %-19s %-19s %-9s %-9s %-13s %-16s %-14s %-12s\n" "$@"
+cs-print-eks-row() {
+  printf "%-40s %-15s %-20s %-10s %-9s %-9s %-13s %-16s %-14s %-20s\n" "$@"
 }
 
 cs-print-version() {
@@ -135,6 +132,7 @@ ec2-update-ssh() {
     relative_target=$(readlink /Users/kmullaney/.ssh/config)
 
     # Resolve the relative path to an absolute path
+    # shellcheck disable=SC2164
     absolute_target=$(cd "$symlink_dir"; cd "$(dirname "$relative_target")"; pwd)/$(basename "$relative_target")
 
     sed -i.bak -e "/^Host $match\$/,/^  User/{s/^  Hostname.*/  Hostname $hostname/;s/^  User.*/  User $username/;}" "$absolute_target"
@@ -150,12 +148,11 @@ EOF
   cat ~/.ssh/config
 }
 
-
-
 ec2-ids() {
   [[ $CS_DEBUG -eq 1 ]] && lib-debug
   # output=$(aws ec2 describe-instances --query 'Reservations[].Instances[].[InstanceId, Tags[?Key==`Name`].Value|[0], State.Name]' --output json --no-paginate | jq -r 'sort_by(.[1])[] | "\(.[0]) | \(.[1]) | \(.[2])"')
   # Get EC2 instances
+  # shellcheck disable=SC2016
   ec2_instances=$(aws ec2 describe-instances --query 'Reservations[].Instances[].[InstanceId, Tags[?Key==`Name`].Value|[0], State.Name]' --output text --no-paginate)
   # Sort the output by the Name field
   sorted_ec2_instances=$(echo "$ec2_instances" | sort -k 2)
@@ -218,25 +215,21 @@ eks-clusters() {
   [[ $CS_DEBUG -eq 1 ]] && lib-debug "$@"
   clusters=$(aws eks list-clusters --query 'clusters[]' --output text --no-paginate)
 
-  cs-print-row "Cluster Name" "Status" "Node Group Name" "Node Group Status" "Min Size" "Max Size" "Desired Size" "Node Group Type" "Instance Type" "K8s Version"
+  cs-print-eks-row "Cluster Name" "Type" "Name" "Status" "Min Size" "Max Size" "Desired Size" "Instance Type" "K8s Version" "Namespaces"
 
   for cluster_name in $clusters; do
-    cluster_status=$(eksctl get cluster --name "$cluster_name" --output json | jq -r '.[0].Status')
-    node_groups=$(eksctl get nodegroup --cluster "$cluster_name" --output json | jq -r 'map(.Name)[]')
-    [[ -z $node_groups ]] && cs-print-row "$cluster_name" "$cluster_status" "" "INACTIVE" "" "" "" "" "" ""
+    # cluster_status=$(eksctl get cluster --name "$cluster_name" --output json | jq -r '.[0].Status')
 
-    for node_group_name in $node_groups; do
-      node_group_info=$(eksctl get nodegroup --cluster "$cluster_name" --name "$node_group_name" --output=json | jq '{status: .[0].Status, minSize: .[0].MinSize, maxSize: .[0].MaxSize, desiredSize: .[0].DesiredCapacity, type: .[0].Type, instanceType: .[0].InstanceType, version: .[0].Version}')
-      node_group_status=$(echo "$node_group_info" | jq -r '.status')
-      min_size=$(echo "$node_group_info" | jq -r '.minSize')
-      max_size=$(echo "$node_group_info" | jq -r '.maxSize')
-      desired_size=$(echo "$node_group_info" | jq -r '.desiredSize')
-      type=$(echo "$node_group_info" | jq -r '.type')
-      instanceType=$(echo "$node_group_info" | jq -r '.instanceType')
-      version=$(echo "$node_group_info" | jq -r '.version')
+    node_groups=$(eksctl get nodegroup --cluster "$cluster_name" --output json | jq -r '.[] | "\(.Name)|\(.Status)|\(.MinSize)|\(.MaxSize)|\(.DesiredCapacity)|\(.InstanceType)|\(.Version)"')
+    for ng in $node_groups; do
+      IFS='|' read -r name status min_size max_size desired_size instance_type version <<< "$ng"
+      cs-print-eks-row "$cluster_name" "Node Group" "$name" "$status" "$min_size" "$max_size" "$desired_size" "$instance_type" "$version" ""
+    done
 
-      [[ $CS_DEBUG -eq 1 ]] && echo "$node_group_info"
-      cs-print-row "$cluster_name" "$cluster_status" "$node_group_name" "$node_group_status" "$min_size" "$max_size" "$desired_size" "$type" "$instanceType" "$version"
+    fargate_profiles=$(eksctl get fargateprofile --cluster "$cluster_name" --output json | jq -r '.[] | "\(.Name)|\(.Status)|\(.Selectors | map(.Namespace) | join(","))"')
+    for fp in $fargate_profiles; do
+      IFS='|' read -r name status namespaces <<< "$fp"
+      cs-print-eks-row "$cluster_name" "Fargate Profile" "$name" "$status" "" "" "" "" "" "$namespaces"
     done
   done
   lib-error-check "$?" "eks-clusters"
@@ -245,11 +238,54 @@ eks-clusters() {
 eks-status() {
   [[ $CS_DEBUG -eq 1 ]] && lib-debug "$@"
   [[ -z $1 ]] && eks-clusters "$@" && return 0
-  output=$(eksctl get ng --cluster "$1" -o json | jq -r '.[] | "\(.Name) | \(.Status) | \(.MinSize) | \(.MaxSize) | \(.DesiredCapacity) | \(.Type) | \(.InstanceType) | \(.Version)"')
-  header="Node Group Name | Node Group Status | Min Size | Max Size | Desired Size | Node Group Type | Instance Type | K8s Version"
+
+  cluster_name="$1"
+  header="Type | Name | Status | Min Size | Max Size | Desired Size | Instance Type | K8s Version | Namespaces"
+
+  node_groups=$(eksctl get nodegroup --cluster "$cluster_name" --output json | jq -r '.[] | "Node Group|\(.Name)|\(.Status)|\(.MinSize)|\(.MaxSize)|\(.DesiredCapacity)|\(.InstanceType)|\(.Version)|"')
+  fargate_profiles=$(eksctl get fargateprofile --cluster "$cluster_name" --output json | jq -r '.[] | "Fargate Profile|\(.Name)|\(.Status)||||||\(.Selectors | map(.Namespace) | join(","))"')
+
+  output=$(echo "$node_groups"; echo "$fargate_profiles")
   cs-print-table "$header\n$output"
   lib-error-check "$?" "eks-status"
 }
+
+# eks-clusters() {
+#   [[ $CS_DEBUG -eq 1 ]] && lib-debug "$@"
+#   clusters=$(aws eks list-clusters --query 'clusters[]' --output text --no-paginate)
+
+#   cs-print-row "Cluster Name" "Status" "Node Group Name" "Node Group Status" "Min Size" "Max Size" "Desired Size" "Node Group Type" "Instance Type" "K8s Version"
+
+#   for cluster_name in $clusters; do
+#     cluster_status=$(eksctl get cluster --name "$cluster_name" --output json | jq -r '.[0].Status')
+#     node_groups=$(eksctl get nodegroup --cluster "$cluster_name" --output json | jq -r 'map(.Name)[]')
+#     [[ -z $node_groups ]] && cs-print-row "$cluster_name" "$cluster_status" "" "INACTIVE" "" "" "" "" "" ""
+
+#     for node_group_name in $node_groups; do
+#       node_group_info=$(eksctl get nodegroup --cluster "$cluster_name" --name "$node_group_name" --output=json | jq '{status: .[0].Status, minSize: .[0].MinSize, maxSize: .[0].MaxSize, desiredSize: .[0].DesiredCapacity, type: .[0].Type, instanceType: .[0].InstanceType, version: .[0].Version}')
+#       node_group_status=$(echo "$node_group_info" | jq -r '.status')
+#       min_size=$(echo "$node_group_info" | jq -r '.minSize')
+#       max_size=$(echo "$node_group_info" | jq -r '.maxSize')
+#       desired_size=$(echo "$node_group_info" | jq -r '.desiredSize')
+#       type=$(echo "$node_group_info" | jq -r '.type')
+#       instanceType=$(echo "$node_group_info" | jq -r '.instanceType')
+#       version=$(echo "$node_group_info" | jq -r '.version')
+
+#       [[ $CS_DEBUG -eq 1 ]] && echo "$node_group_info"
+#       cs-print-row "$cluster_name" "$cluster_status" "$node_group_name" "$node_group_status" "$min_size" "$max_size" "$desired_size" "$type" "$instanceType" "$version"
+#     done
+#   done
+#   lib-error-check "$?" "eks-clusters"
+# }
+
+# eks-status() {
+#   [[ $CS_DEBUG -eq 1 ]] && lib-debug "$@"
+#   [[ -z $1 ]] && eks-clusters "$@" && return 0
+#   output=$(eksctl get ng --cluster "$1" -o json | jq -r '.[] | "\(.Name) | \(.Status) | \(.MinSize) | \(.MaxSize) | \(.DesiredCapacity) | \(.Type) | \(.InstanceType) | \(.Version)"')
+#   header="Node Group Name | Node Group Status | Min Size | Max Size | Desired Size | Node Group Type | Instance Type | K8s Version"
+#   cs-print-table "$header\n$output"
+#   lib-error-check "$?" "eks-status"
+# }
 
 eks-start() {
   [[ $CS_DEBUG -eq 1 ]] && lib-debug "$@"
@@ -333,10 +369,13 @@ lambda-get-layer-version() {
   globPattern=( "$7" )
 
   aws --region "$region" lambda get-layer-version --layer-name "$arn" --version-number "$build" --query 'Content.Location' --output text --no-paginate | xargs curl "$xargsOpts" "$path.zip" && unzip "$unzipOpts" "$path.zip" -d "$path"
+  # shellcheck disable=SC2128
   if [[ -n "$globPattern" ]]; then
     if [[ "$SHELL" == "/bin/zsh" ]]; then
+      # shellcheck disable=SC2086
       stat -L -F "%y %n" $globPattern 2>/dev/null
     else
+      # shellcheck disable=SC2086
       stat -c "%y %n" $globPattern
     fi
   fi
@@ -481,24 +520,27 @@ cs-usage() {
   echo "  ms status"
   echo "  ms start <stream name>"
   echo "  ms stop <stream name>"
-  echo "  lambda lambda-list-layers [runtime]|[all] [region]"
-  echo "  lambda lambda-download-layers [layer]|[all] [region] [build]|[latest] [extension]|[agent]"
+  echo "  lambda list-layers [runtime]|[all] [region]"
+  echo "  lambda download-layers [<arn> | [layer]|[all] [region] [build]|[latest]] [extension|agent]"
   echo ""
   echo "Examples:"
   echo "  cs ec2 status"
   echo "  cs eks start my-cluster 2"
   echo "  cs ms start my-stream"
-  echo "  cs lambda lambda-list-layers                                     List layer names"
-  echo "  cs lambda lambda-list-layers all                                 Details for all layers"
-  echo "  cs lambda lambda-list-layers nodejs18.x us-west-2                Details for a specific layer"
-  echo "  cs lambda lambda-download-layers NewRelicNodeJS18X us-west-2 24  Download build #24 for a layer"
-  echo "  cs lambda lambda-download-layers all us-west-2 latest extension  Download all latest layers & show extension details"
+  echo "  cs lambda list-layers                                      List layer names"
+  echo "  cs lambda list-layers all                                  Details for all layers"
+  echo "  cs lambda list-layers nodejs18.x us-west-2                 Details for a specific layer"
+  echo "  cs lambda download-layers NewRelicNodeJS18X us-west-2 24   Download build #24 for a layer"
+  echo "  cs lambda download-layers arn extension                    Download layer given the layer arn and provide details about the extension"
+  echo "  cs lambda download-layers arn agent                        Download layer given the layer arn and provide details about the agent"
+  # shellcheck disable=SC2086
   cs-unset $1
 }
 
-# unset functions to free up memmory
+# unset functions to free up memory
 cs-unset() {
   unset -f cs-version cs-usage cs-thanks cs-lambda-go cs-eks-go cs-ec2-go
+  # shellcheck disable=SC2086
   exit $1
 }
 
@@ -530,7 +572,18 @@ cs-lambda-go() {
     lambda-list-layers "$3" "$4"
     ;;
   'download-layers')
-   lambda-download-layers "$3" "$4" "$5" "$6"
+    if [[ $3 =~ ^arn:aws:lambda:[a-z0-9-]*:[0-9]*:layer:[a-zA-Z0-9-]*:[0-9]*$ ]]; then
+      # Parse ARN
+      IFS=':' read -ra arn_parts <<< "$3"
+      region=${arn_parts[3]}
+      layer_name=${arn_parts[6]}
+      version=${arn_parts[7]}
+      glob=$4
+      lambda-download-layers "$layer_name" "$region" "$version" "$glob"
+    else
+      # Use provided arguments
+      lambda-download-layers "$3" "$4" "$5" "$6"
+    fi
     ;;
   *)
     cs-usage 1
