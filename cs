@@ -91,7 +91,7 @@ cs-print-table() {
 }
 
 cs-print-eks-row() {
-  printf "%-40s %-15s %-20s %-10s %-9s %-9s %-13s %-16s %-14s %-20s\n" "$@"
+  printf "%-40s %-15s %-11s %-15s %-17s %-9s %-9s %-13s %-16s %-14s %-20s\n" "$@"
 }
 
 cs-print-version() {
@@ -215,21 +215,21 @@ eks-clusters() {
   [[ $CS_DEBUG -eq 1 ]] && lib-debug "$@"
   clusters=$(aws eks list-clusters --query 'clusters[]' --output text --no-paginate)
 
-  cs-print-eks-row "Cluster Name" "Type" "Name" "Status" "Min Size" "Max Size" "Desired Size" "Instance Type" "K8s Version" "Namespaces"
+  cs-print-eks-row "Cluster Name" "Cluster Status" "Type" "Name" "Status" "Min Size" "Max Size" "Desired Size" "Instance Type" "K8s Version" "Namespaces"
 
   for cluster_name in $clusters; do
-    # cluster_status=$(eksctl get cluster --name "$cluster_name" --output json | jq -r '.[0].Status')
+    cluster_status=$(eksctl get cluster --name "$cluster_name" --output json | jq -r '.[0].Status')
 
-    node_groups=$(eksctl get nodegroup --cluster "$cluster_name" --output json | jq -r '.[] | "\(.Name)|\(.Status)|\(.MinSize)|\(.MaxSize)|\(.DesiredCapacity)|\(.InstanceType)|\(.Version)"')
+    node_groups=$(eksctl get nodegroup --cluster "$cluster_name" --output json | jq -r '.[] | "\(.Type)|\(.Name)|\(.Status)|\(.MinSize)|\(.MaxSize)|\(.DesiredCapacity)|\(.InstanceType)|\(.Version)"')
     for ng in $node_groups; do
-      IFS='|' read -r name status min_size max_size desired_size instance_type version <<< "$ng"
-      cs-print-eks-row "$cluster_name" "Node Group" "$name" "$status" "$min_size" "$max_size" "$desired_size" "$instance_type" "$version" ""
+      IFS='|' read -r type name status min_size max_size desired_size instance_type version <<< "$ng"
+      cs-print-eks-row "$cluster_name" "$cluster_status" "$type" "$name" "$status" "$min_size" "$max_size" "$desired_size" "$instance_type" "$version" ""
     done
 
-    fargate_profiles=$(eksctl get fargateprofile --cluster "$cluster_name" --output json | jq -r '.[] | "\(.Name)|\(.Status)|\(.Selectors | map(.Namespace) | join(","))"')
+    fargate_profiles=$(eksctl get fargateprofile --cluster "$cluster_name" --output json | jq -r '.[] | "\(.Type)|\(.Name)|\(.Status)|\(.Selectors | map(.Namespace) | join(","))"' 2>/dev/null)
     for fp in $fargate_profiles; do
-      IFS='|' read -r name status namespaces <<< "$fp"
-      cs-print-eks-row "$cluster_name" "Fargate Profile" "$name" "$status" "" "" "" "" "" "$namespaces"
+      IFS='|' read -r type name status namespaces <<< "$fp"
+      cs-print-eks-row "$cluster_name" "$cluster_status" "$type" "$name" "$status" "" "" "" "" "" "" "$namespaces"
     done
   done
   lib-error-check "$?" "eks-clusters"
@@ -240,10 +240,10 @@ eks-status() {
   [[ -z $1 ]] && eks-clusters "$@" && return 0
 
   cluster_name="$1"
-  header="Type | Name | Status | Min Size | Max Size | Desired Size | Instance Type | K8s Version | Namespaces"
+  header="Type|Name|Status|Min Size|Max Size|Desired Size|Instance Type|K8s Version|Namespaces"
 
-  node_groups=$(eksctl get nodegroup --cluster "$cluster_name" --output json | jq -r '.[] | "Node Group|\(.Name)|\(.Status)|\(.MinSize)|\(.MaxSize)|\(.DesiredCapacity)|\(.InstanceType)|\(.Version)|"')
-  fargate_profiles=$(eksctl get fargateprofile --cluster "$cluster_name" --output json | jq -r '.[] | "Fargate Profile|\(.Name)|\(.Status)||||||\(.Selectors | map(.Namespace) | join(","))"')
+  node_groups=$(eksctl get nodegroup --cluster "$cluster_name" --output json | jq -r '.[] | "\(.Type)|\(.Name)|\(.Status)|\(.MinSize)|\(.MaxSize)|\(.DesiredCapacity)|\(.InstanceType)|\(.Version)|"')
+  fargate_profiles=$(eksctl get fargateprofile --cluster "$cluster_name" --output json | jq -r '.[] | "\(.Type)|\(.Name)|\(.Status)||||||\(.Selectors | map(.Namespace) | join(","))"' 2>/dev/null)
 
   output=$(echo "$node_groups"; echo "$fargate_profiles")
   cs-print-table "$header\n$output"
