@@ -220,7 +220,7 @@ eks-clusters() {
   for cluster_name in $clusters; do
     cluster_status=$(eksctl get cluster --name "$cluster_name" --output json | jq -r '.[0].Status')
 
-    node_groups=$(eksctl get nodegroup --cluster "$cluster_name" --output json | jq -r '.[] | "\(.Type)|\(.Name)|\(.Status)|\(.MinSize)|\(.MaxSize)|\(.DesiredCapacity)|\(.InstanceType)|\(.Version)"')
+    node_groups=$(eksctl get nodegroup --cluster "$cluster_name" --output json | jq -r '.[] | "\(.Type)|\(.Name)|\(.Status)|\(.MinSize)|\(.MaxSize)|\(.DesiredCapacity)|\(.InstanceType)|\(.Version)"' 2>/dev/null)
     for ng in $node_groups; do
       IFS='|' read -r type name status min_size max_size desired_size instance_type version <<< "$ng"
       cs-print-eks-row "$cluster_name" "$cluster_status" "$type" "$name" "$status" "$min_size" "$max_size" "$desired_size" "$instance_type" "$version" ""
@@ -242,50 +242,13 @@ eks-status() {
   cluster_name="$1"
   header="Type|Name|Status|Min Size|Max Size|Desired Size|Instance Type|K8s Version|Namespaces"
 
-  node_groups=$(eksctl get nodegroup --cluster "$cluster_name" --output json | jq -r '.[] | "\(.Type)|\(.Name)|\(.Status)|\(.MinSize)|\(.MaxSize)|\(.DesiredCapacity)|\(.InstanceType)|\(.Version)|"')
+  node_groups=$(eksctl get nodegroup --cluster "$cluster_name" --output json | jq -r '.[] | "\(.Type)|\(.Name)|\(.Status)|\(.MinSize)|\(.MaxSize)|\(.DesiredCapacity)|\(.InstanceType)|\(.Version)|"' 2>/dev/null)
   fargate_profiles=$(eksctl get fargateprofile --cluster "$cluster_name" --output json | jq -r '.[] | "\(.Type)|\(.Name)|\(.Status)||||||\(.Selectors | map(.Namespace) | join(","))"' 2>/dev/null)
 
   output=$(echo "$node_groups"; echo "$fargate_profiles")
   cs-print-table "$header\n$output"
   lib-error-check "$?" "eks-status"
 }
-
-# eks-clusters() {
-#   [[ $CS_DEBUG -eq 1 ]] && lib-debug "$@"
-#   clusters=$(aws eks list-clusters --query 'clusters[]' --output text --no-paginate)
-
-#   cs-print-row "Cluster Name" "Status" "Node Group Name" "Node Group Status" "Min Size" "Max Size" "Desired Size" "Node Group Type" "Instance Type" "K8s Version"
-
-#   for cluster_name in $clusters; do
-#     cluster_status=$(eksctl get cluster --name "$cluster_name" --output json | jq -r '.[0].Status')
-#     node_groups=$(eksctl get nodegroup --cluster "$cluster_name" --output json | jq -r 'map(.Name)[]')
-#     [[ -z $node_groups ]] && cs-print-row "$cluster_name" "$cluster_status" "" "INACTIVE" "" "" "" "" "" ""
-
-#     for node_group_name in $node_groups; do
-#       node_group_info=$(eksctl get nodegroup --cluster "$cluster_name" --name "$node_group_name" --output=json | jq '{status: .[0].Status, minSize: .[0].MinSize, maxSize: .[0].MaxSize, desiredSize: .[0].DesiredCapacity, type: .[0].Type, instanceType: .[0].InstanceType, version: .[0].Version}')
-#       node_group_status=$(echo "$node_group_info" | jq -r '.status')
-#       min_size=$(echo "$node_group_info" | jq -r '.minSize')
-#       max_size=$(echo "$node_group_info" | jq -r '.maxSize')
-#       desired_size=$(echo "$node_group_info" | jq -r '.desiredSize')
-#       type=$(echo "$node_group_info" | jq -r '.type')
-#       instanceType=$(echo "$node_group_info" | jq -r '.instanceType')
-#       version=$(echo "$node_group_info" | jq -r '.version')
-
-#       [[ $CS_DEBUG -eq 1 ]] && echo "$node_group_info"
-#       cs-print-row "$cluster_name" "$cluster_status" "$node_group_name" "$node_group_status" "$min_size" "$max_size" "$desired_size" "$type" "$instanceType" "$version"
-#     done
-#   done
-#   lib-error-check "$?" "eks-clusters"
-# }
-
-# eks-status() {
-#   [[ $CS_DEBUG -eq 1 ]] && lib-debug "$@"
-#   [[ -z $1 ]] && eks-clusters "$@" && return 0
-#   output=$(eksctl get ng --cluster "$1" -o json | jq -r '.[] | "\(.Name) | \(.Status) | \(.MinSize) | \(.MaxSize) | \(.DesiredCapacity) | \(.Type) | \(.InstanceType) | \(.Version)"')
-#   header="Node Group Name | Node Group Status | Min Size | Max Size | Desired Size | Node Group Type | Instance Type | K8s Version"
-#   cs-print-table "$header\n$output"
-#   lib-error-check "$?" "eks-status"
-# }
 
 eks-start() {
   [[ $CS_DEBUG -eq 1 ]] && lib-debug "$@"
