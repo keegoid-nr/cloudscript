@@ -184,14 +184,23 @@ Verify that the fingerprint for the downloaded key matches the following:
 
 ```sh
 gpg --fingerprint kmullaney@newrelic.com
-E67B C11C D9B3 EC3B 81B7  0C35 68BF EBFB 3C1B 8D5A
 ```
+
+You should get `E67B C11C D9B3 EC3B 81B7  0C35 68BF EBFB 3C1B 8D5A`.
 
 When verifying the checksum, use the long format (the short format is not secure). For example:
 
 ```sh
 gpg --keyid-format long --verify SHA512SUMS.asc SHA512SUMS
 ```
+
+Now that you've verified the checksum file has a valid signature, it's time to check that the `cs` file has not been modified in transit.
+
+```sh
+shasum -a 512 -c SHA512SUMS
+```
+
+You should get `cs: OK`.
 
 ---
 
