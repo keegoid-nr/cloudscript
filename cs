@@ -16,7 +16,7 @@
 
 [[ -z $CS_DEBUG ]] && CS_DEBUG=0
 SSH_CONFIG="$HOME/.ssh/config"
-VERSION="v2.1"
+VERSION="v2.2"
 # ensure brace expansion is on for the shell
 set -o braceexpand && [[ $CS_DEBUG -eq 1 ]] && set -o && echo "$SHELL"
 # ensure Zsh uses zero-based arrays
