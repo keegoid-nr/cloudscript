@@ -334,12 +334,16 @@ lambda-get-layer-version() {
   aws --region "$region" lambda get-layer-version --layer-name "$arn" --version-number "$build" --query 'Content.Location' --output text --no-paginate | xargs curl "$xargsOpts" "$path.zip" && unzip "$unzipOpts" "$path.zip" -d "$path"
   # shellcheck disable=SC2128
   if [[ -n "$globPattern" ]]; then
-    if [[ "$SHELL" == "/bin/zsh" ]]; then
-      # shellcheck disable=SC2086
-      stat -L -F "%y %n" $globPattern 2>/dev/null
+    if [[ "$globPattern" == *"newrelic-dotnet-agent"* ]]; then
+      strings "$globPattern" | grep -A1 'New Relic .NET Agent API'
     else
-      # shellcheck disable=SC2086
-      stat -c "%y %n" $globPattern
+      if [[ "$SHELL" == "/bin/zsh" ]]; then
+        # shellcheck disable=SC2086
+        stat -L -F "%y %n" $globPattern 2>/dev/null
+      else
+        # shellcheck disable=SC2086
+        stat -c "%y %n" $globPattern
+      fi
     fi
   fi
   return 0
@@ -382,6 +386,7 @@ lambda-get-layer() {
     [[ $1 == *Java* ]] && globPattern="$path/*/*/NewRelic*"
     [[ $1 == *NodeJS* ]] && globPattern="$path/*/*/newrelic/newrelic*"
     [[ $1 == *Python* ]] && globPattern="$path/*/*/*/*/newrelic/agent*"
+    [[ $1 == *Dotnet* ]] && globPattern="$path/lib/newrelic-dotnet-agent/NewRelic.Api.Agent.dll"
     lambda-get-layer-version "$arn" "$region" "$build" "$xargsOpts" "$unzipOpts" "$path" "$globPattern"
     [[ $1 == *NodeJS* ]] && grep 'newrelic/-' "$path/nodejs/package-lock.json" | uniq
     [[ $1 == *Python* ]] && cat "$path/python/lib/python$v/site-packages/newrelic/version.txt"
