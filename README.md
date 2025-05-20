@@ -34,6 +34,9 @@ unzip, xargs, and curl must also be available.
 ## Usage
 
 ```log
+Assuming you've set an alias for this script to "cs"
+alias cs='bash ~/path/to/cloudscript.sh'
+------------------------------------------------------
 Usage: cs COMPONENT <REQUIRED ARGS> [OPTIONAL ARGS]
 
 About:
