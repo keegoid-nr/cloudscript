@@ -16,7 +16,7 @@
 
 [[ -z $CS_DEBUG ]] && CS_DEBUG=0
 SSH_CONFIG="$HOME/.ssh/config"
-VERSION="v2.2"
+VERSION="v2.3"
 # ensure brace expansion is on for the shell
 set -o braceexpand && [[ $CS_DEBUG -eq 1 ]] && set -o && echo "$SHELL"
 # ensure Zsh uses zero-based arrays
@@ -150,14 +150,18 @@ EOF
 
 ec2-ids() {
   [[ $CS_DEBUG -eq 1 ]] && lib-debug
-  # output=$(aws ec2 describe-instances --query 'Reservations[].Instances[].[InstanceId, Tags[?Key==`Name`].Value|[0], State.Name]' --output json --no-paginate | jq -r 'sort_by(.[1])[] | "\(.[0]) | \(.[1]) | \(.[2])"')
-  # Get EC2 instances
-  # shellcheck disable=SC2016
-  ec2_instances=$(aws ec2 describe-instances --query 'Reservations[].Instances[].[InstanceId, Tags[?Key==`Name`].Value|[0], State.Name]' --output text --no-paginate)
-  # Sort the output by the Name field
-  sorted_ec2_instances=$(echo "$ec2_instances" | sort -k 2)
-  # Format the output
-  output=$(echo "$sorted_ec2_instances" | awk '{printf "%s | %s | %s\n", $1, $2, $3}')
+  # Get EC2 instances and format as JSON
+  ec2_instances_json=$(aws ec2 describe-instances \
+    --query 'Reservations[].Instances[].{InstanceId:InstanceId, Name:Tags[?Key==`Name`].Value|[0], State:State.Name}' \
+    --output json --no-paginate)
+
+  # Sort by Name and format using jq
+  # We use select(.Name != null) to ensure only instances with a 'Name' tag are sorted properly
+  # and if an instance doesn't have a 'Name' tag, it will show as 'null' in the output.
+  # The sort_by(.<field>) works reliably on JSON arrays.
+  output=$(echo "$ec2_instances_json" | \
+    jq -r 'sort_by(.Name)[] | "\(.InstanceId) | \(.Name) | \(.State)"')
+
   header="Instance ID | Name | State"
   cs-print-table "$header\n$output"
   lib-error-check "$?" "ec2-ids"
@@ -166,11 +170,23 @@ ec2-ids() {
 ec2-status() {
   [[ $CS_DEBUG -eq 1 ]] && lib-debug "$@"
   [[ -z $1 ]] && ec2-ids && return 0
-  # Get the EC2 instance
-  # output=$(aws ec2 describe-instance-status --instance-ids "$1" --output json | jq -r '.InstanceStatuses[] | "\(.InstanceId) | \(.InstanceState.Name) | \(.InstanceStatus.Status) | \(.SystemStatus.Status)"')
-  ec2_instance=$(aws ec2 describe-instance-status --instance-ids "$1" --query 'InstanceStatuses[*].[InstanceId, InstanceState.Name, InstanceStatus.Status, SystemStatus.Status]' --output text)
-  # Format the output
-  output=$(echo "$ec2_instance" | awk '{printf "%s | %s | %s | %s\n", $1, $2, $3, $4}')
+  instance_id="$1" # Using "$1" to pass the instance ID
+
+  # Add --include-all-instances here
+  ec2_instance=$(aws ec2 describe-instance-status --instance-ids "$instance_id" \
+    --include-all-instances \
+    --query 'InstanceStatuses[*].{InstanceId:InstanceId, InstanceStateName:InstanceState.Name, InstanceStatus:InstanceStatus.Status, SystemStatus:SystemStatus.Status}' \
+    --output json)
+
+  # Check if ec2_instance is empty (meaning no status found)
+  if [[ "$ec2_instance" == "[]" || -z "$ec2_instance" ]]; then
+    echo "No status found for instance ID: $instance_id. Please verify the ID and region."
+    cs-print-table "Instance ID | Instance State | Instance Status | System Status\n$instance_id | N/A | N/A | N/A"
+    return 1 # Indicate an error
+  fi
+
+  # Format the output using jq
+  output=$(echo "$ec2_instance" | jq -r '.[0] | "\(.InstanceId) | \(.InstanceStateName) | \(.InstanceStatus) | \(.SystemStatus)"')
   header="Instance ID | Instance State | Instance Status | System Status"
   cs-print-table "$header\n$output"
   lib-error-check "$?" "ec2-status"
@@ -467,6 +483,9 @@ lambda-download-layers() {
 # --------------------------- CLI
 
 cs-usage() {
+  echo "Assuming you've set an alias for this script to \"cs\""
+  echo "alias cs='bash ~/path/to/cloudscript.sh'"
+  echo "------------------------------------------------------"
   echo "Usage: cs COMPONENT <REQUIRED ARGS> [OPTIONAL ARGS]"
   echo ""
   echo "About:"
