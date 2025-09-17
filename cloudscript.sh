@@ -540,7 +540,7 @@ cs-version() {
 cs-thanks() {
   echo
   cs-version "$1"
-  lib-msg "Made with <3 by Keegan Mullaney, a Lead Technical Support Engineer at New Relic."
+  lib-msg "Made with <3 by Keegan Mullaney, a Principal Technical Support Engineer at New Relic."
   cs-unset 0
 }
 
