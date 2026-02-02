@@ -380,7 +380,7 @@ lambda-get-layer() {
   region="$2"
   arn="arn:aws:lambda:$region:451483290750:layer:$name"
   build="$3"
-  pythonRuntime=${1: -2}
+  pythonRuntime=$(echo "$1" | sed -E 's/.*Python([0-9]+).*/\1/')
   v="${pythonRuntime:0:1}.${pythonRuntime:1}"
   path="$1":"$3"
 
@@ -405,7 +405,7 @@ lambda-get-layer() {
     [[ $1 == *Dotnet* ]] && globPattern="$path/lib/newrelic-dotnet-agent/NewRelic.Api.Agent.dll"
     lambda-get-layer-version "$arn" "$region" "$build" "$xargsOpts" "$unzipOpts" "$path" "$globPattern"
     [[ $1 == *NodeJS* ]] && grep 'newrelic/-' "$path/nodejs/package-lock.json" | uniq
-    [[ $1 == *Python* ]] && cat "$path/python/lib/python$v/site-packages/newrelic/version.txt"
+    [[ $1 == *Python* ]] && grep "__version__ =" "$path/python/lib/python$v/site-packages/newrelic/_version.py" | cut -d "'" -f 2
     [[ $1 == *Extension* ]] && lib-msg "an agent does not exist in the $1 layer"
   elif [[ $4 == extension ]]; then
     globPattern="$path/*/newrelic*"
